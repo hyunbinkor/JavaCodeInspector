@@ -1,7 +1,7 @@
 import { JavaASTParser } from '../ast/javaAstParser.js';
 import { LLMService } from '../clients/llmService.js';
 import { issueCodeAnalyzer } from './issueCodeAnalyzer.js';
-import { WeaviateClient } from '../clients/weaviateClient.js';
+import { VectorClient } from '../clients/vectorClient.js';
 import { PatternDatasetGenerator } from './patternGenerator.js';
 import { DevelopmentGuidelineChecker } from './guidelineChecker.js';
 import { config } from '../config.js';
@@ -15,7 +15,7 @@ import { config } from '../config.js';
  * 
  * - Layer 2: VectorDB 패턴 분석
  *   - PatternDatasetGenerator로 코드 임베딩 생성
- *   - WeaviateClient로 유사 코드 패턴 검색 (임베딩 유사도 0.7 이상)
+ *   - VectorClient로 유사 코드 패턴 검색 (임베딩 유사도 0.7 이상)
  *   - issueCodeAnalyzer로 안티패턴 분류 및 이슈 탐지
  * 
  * - Layer 3: 결과 통합
@@ -32,7 +32,7 @@ export class UnifiedJavaCodeChecker {
     this.llmService = new LLMService();
     
     // VectorDB 클라이언트 초기화 - 코드 패턴 유사도 검색
-    this.vectorClient = new WeaviateClient();
+    this.vectorClient = new VectorClient();
     
     // 패턴 기반 이슈 분석기 - 안티패턴 탐지 및 분류
     this.issueCodeAnalyzer = new issueCodeAnalyzer();
@@ -219,7 +219,7 @@ export class UnifiedJavaCodeChecker {
    * 1. 코드 임베딩 생성 (PatternDatasetGenerator)
    *    - 코드를 벡터 공간에 매핑 (의미적 유사도 측정 가능)
    * 
-   * 2. 유사 패턴 검색 (WeaviateClient)
+   * 2. 유사 패턴 검색 (VectorClient)
    *    - 임베딩 유사도 0.7 이상인 패턴 검색
    *    - 기존에 분석된 코드 패턴 DB에서 검색
    * 

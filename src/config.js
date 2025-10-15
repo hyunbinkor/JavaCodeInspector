@@ -3,6 +3,44 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
+  // Vector DB 통합 설정
+  vector: {
+    provider: process.env.VECTOR_PROVIDER || 'weaviate', // 'weaviate' 또는 'qdrant'
+    
+    // Weaviate 설정
+    weaviate: {
+      url: process.env.WEAVIATE_URL || 'http://localhost:8080',
+      apiKey: process.env.WEAVIATE_API_KEY,
+      // 로컬 환경에서의 API 인증 여부 설정
+      useAuth: process.env.WEAVIATE_USE_AUTH === 'true',
+      // Ollama 모델 통합을 위한 설정
+      ollamaEndpoint: process.env.OLLAMA_EMBEDDINGS_URL || 'http://ollama:11434',
+      embeddingModel: process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text'
+    },
+    
+    // Qdrant 설정
+    qdrant: {
+      url: process.env.QDRANT_URL || 'http://localhost:6333',
+      apiKey: process.env.QDRANT_API_KEY,
+      collectionNamePattern: process.env.QDRANT_COLLECTION_NAME_PATTERN || 'code_{type}',
+      // Qdrant 벡터 차원 설정
+      vectorDimensions: parseInt(process.env.QDRANT_VECTOR_DIMENSIONS) || 480,
+      // 벡터 인덱스 설정
+      indexParams: {
+        m: parseInt(process.env.QDRANT_INDEX_M) || 16,
+        ef_construct: parseInt(process.env.QDRANT_INDEX_EF_CONSTRUCT) || 100
+      }
+    },
+
+    // 공통 설정
+    maxRetries: parseInt(process.env.VECTOR_MAX_RETRIES) || 3,
+    retryDelay: parseInt(process.env.VECTOR_RETRY_DELAY) || 1000,
+    similarityThreshold: parseFloat(process.env.VECTOR_SIMILARITY_THRESHOLD) || 0.7,
+    // 클래스/컬렉션 이름 설정
+    codePatternName: process.env.VECTOR_CODE_PATTERN_NAME || 'CodePattern',
+    guidelineName: process.env.VECTOR_GUIDELINE_NAME || 'CodingGuideline'
+  },
+
   // LLM 통합 설정
   llm: {
     provider: process.env.LLM_PROVIDER || 'bedrock', // 'bedrock' 또는 'ollama'
@@ -46,12 +84,6 @@ export const config = {
     enableChunking: process.env.LLM_ENABLE_CHUNKING !== 'false',                 // 청킹 활성화
     chunkOverlapSize: parseInt(process.env.LLM_CHUNK_OVERLAP_SIZE) || 100,       // 청크 겹침 크기
     maxChunksPerRequest: parseInt(process.env.LLM_MAX_CHUNKS_PER_REQUEST) || 5   // 요청당 최대 청크 수
-  },
-  
-  // 기존 설정들 (하위 호환성)  
-  weaviate: {
-    url: process.env.WEAVIATE_URL || 'http://localhost:8080',
-    apiKey: process.env.WEAVIATE_API_KEY
   },
   
   app: {
@@ -141,6 +173,28 @@ export function validateConfig() {
       errors.push('Bedrock region이 설정되지 않았습니다');
     }
   }
+
+  // Vector DB 제공자 검증
+  if (!['weaviate', 'qdrant'].includes(config.vector.provider)) {
+    errors.push(`지원하지 않는 Vector DB 제공자: ${config.vector.provider}`);
+  }
+
+  // Weaviate 설정 검증
+  if (config.vector.provider === 'weaviate') {
+    if (!config.vector.weaviate.url) {
+      errors.push('Weaviate URL이 설정되지 않았습니다');
+    }
+  }
+
+  // Qdrant 설정 검증
+  if (config.vector.provider === 'qdrant') {
+    if (!config.vector.qdrant.url) {
+      errors.push('Qdrant URL이 설정되지 않았습니다');
+    }
+    if (!config.vector.qdrant.vectorDimensions || config.vector.qdrant.vectorDimensions < 1) {
+      errors.push('Qdrant vectorDimensions가 올바르지 않습니다');
+    }
+  }
   
   return {
     isValid: errors.length === 0,
@@ -151,20 +205,60 @@ export function validateConfig() {
 // 설정 초기화 및 검증
 const validation = validateConfig();
 if (!validation.isValid) {
-  console.error('Config 검증 실패:');
+  console.error('❌ Config 검증 실패:');
   validation.errors.forEach(error => console.error(`  - ${error}`));
   process.exit(1);
-} else {
-  console.log(`✅ Config 검증 완료 - LLM 제공자: ${config.llm.provider.toUpperCase()}`);
-  
-  if (config.llm.provider === 'ollama') {
-    console.log(`📡 Ollama 서버: ${config.llm.ollama.baseUrl}`);
-    console.log(`🤖 모델: ${config.llm.ollama.model}`);
-    console.log(`⏱️ 타임아웃: ${config.llm.ollama.timeout}ms`);
-    console.log(`🔄 최대 재시도: ${config.llm.maxRetries}회`);
-    
-    if (config.llm.enableChunking) {
-      console.log(`📦 청킹 활성화 - 청크 크기: ${config.llm.ollama.chunkSize}자`);
-    }
-  }
 }
+
+// 성공 메시지 출력
+console.log('='.repeat(60));
+console.log('✅ Config 검증 완료');
+console.log('='.repeat(60));
+
+// LLM 설정 출력
+console.log(`\n📊 LLM 제공자: ${config.llm.provider.toUpperCase()}`);
+if (config.llm.provider === 'ollama') {
+  console.log(`  📡 서버: ${config.llm.ollama.baseUrl}`);
+  console.log(`  🤖 모델: ${config.llm.ollama.model}`);
+  console.log(`  ⏱️  타임아웃: ${config.llm.ollama.timeout}ms`);
+  console.log(`  🔄 최대 재시도: ${config.llm.maxRetries}회`);
+  
+  if (config.llm.enableChunking) {
+    console.log(`  📦 청킹: 활성화 (크기: ${config.llm.ollama.chunkSize}자)`);
+  }
+} else if (config.llm.provider === 'bedrock') {
+  console.log(`  🌎 리전: ${config.llm.bedrock.region}`);
+  console.log(`  🤖 모델: ${config.llm.bedrock.modelId.split('/').pop()}`);
+  console.log(`  🎯 최대 토큰: ${config.llm.bedrock.maxTokens}`);
+  console.log(`  🌡️  Temperature: ${config.llm.bedrock.temperature}`);
+}
+
+// Vector DB 설정 출력
+console.log(`\n📊 Vector DB 제공자: ${config.vector.provider.toUpperCase()}`);
+if (config.vector.provider === 'weaviate') {
+  console.log(`  📡 서버: ${config.vector.weaviate.url}`);
+  console.log(`  🔑 인증 모드: ${config.vector.weaviate.useAuth ? '사용' : '미사용'}`);
+  console.log(`  🧩 Embedding: ${config.vector.weaviate.embeddingModel}`);
+  console.log(`  📝 CodePattern 클래스: ${config.vector.codePatternName}`);
+  console.log(`  📋 Guideline 클래스: ${config.vector.guidelineName}`);
+} else if (config.vector.provider === 'qdrant') {
+  console.log(`  📡 서버: ${config.vector.qdrant.url}`);
+  console.log(`  🔑 인증: ${config.vector.qdrant.apiKey ? 'API Key 사용' : '미사용'}`);
+  console.log(`  📊 벡터 차원: ${config.vector.qdrant.vectorDimensions}`);
+  console.log(`  🎯 인덱스 파라미터: M=${config.vector.qdrant.indexParams.m}, EF=${config.vector.qdrant.indexParams.ef_construct}`);
+  console.log(`  📝 CodePattern 컬렉션: ${config.vector.qdrant.collectionNamePattern.replace('{type}', 'pattern')}`);
+  console.log(`  📋 Guideline 컬렉션: ${config.vector.qdrant.collectionNamePattern.replace('{type}', 'guideline')}`);
+}
+
+// 공통 Vector DB 설정
+console.log(`  🔄 최대 재시도: ${config.vector.maxRetries}회`);
+console.log(`  📏 유사도 임계값: ${config.vector.similarityThreshold}`);
+
+// 애플리케이션 설정
+console.log(`\n⚙️  애플리케이션 설정:`);
+console.log(`  📦 배치 크기: ${config.app.batchSize}`);
+console.log(`  🔀 병렬 처리: ${config.app.enableParallelProcessing ? '활성화' : '비활성화'} (최대 ${config.app.maxParallelTasks}개)`);
+console.log(`  🛡️  Graceful Degradation: ${config.app.enableGracefulDegradation ? '활성화' : '비활성화'}`);
+
+console.log('='.repeat(60));
+console.log('🚀 시스템 준비 완료!\n');

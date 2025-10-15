@@ -1,4 +1,4 @@
-import { WeaviateClient } from '../clients/weaviateClient.js';
+import { VectorClient } from '../clients/vectorClient.js';
 import { LLMService } from '../clients/llmService.js';
 
 /**
@@ -28,7 +28,7 @@ export class DevelopmentGuidelineChecker {
     this.contextualRules = new Map();
     
     // VectorDB 클라이언트 - 가이드라인 규칙 로드
-    this.vectorClient = new WeaviateClient();
+    this.vectorClient = new VectorClient();
     
     // LLM 서비스 - 컨텍스트 기반 분석에 사용
     this.llmService = new LLMService();

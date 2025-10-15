@@ -10,7 +10,7 @@ npm install
 cp .env.example .env
 
 # VectorDB 초기화
-node -e "import('./clients/weaviateClient.js').then(({WeaviateClient}) => new WeaviateClient().initializeSchema())"
+node -e "import('./clients/vectorClient.js').then(({VectorClient}) => new VectorClient().initializeSchema())"
 ```
 
 ## 주요 명령어

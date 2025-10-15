@@ -1,6 +1,6 @@
 import { JavaASTParser } from '../ast/javaAstParser.js';
 import { LLMService } from '../clients/llmService.js';
-import { WeaviateClient } from '../clients/weaviateClient.js';
+import { VectorClient } from '../clients/vectorClient.js';
 import { config } from '../config.js';
 
 /**
@@ -13,7 +13,7 @@ export class DynamicSafePatternAnalyzer {
   constructor() {
     this.astParser = new JavaASTParser();
     this.llmService = new LLMService();
-    this.vectorClient = new WeaviateClient();
+    this.vectorClient = new VectorClient();
     this.safePatternCache = new Map(); // 카테고리별 안전한 패턴 저장 (category -> pattern)
     this.antiPatternCache = new Map(); // 문제 패턴 저장 (uniqueKey -> pattern)
   }

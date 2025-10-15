@@ -1,12 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import { CodeEmbeddingGenerator } from '../embeddings/codeEmbedding.js';
-import { LLMService } from '../clients/llmService.js';
-import { WeaviateClient } from '../clients/weaviateClient.js';
+import { LLMClient } from '../clients/llmClient.js';
+import { VectorClient } from '../clients/vectorClient.js';
 
 export class PatternDatasetGenerator {
   constructor() {
-    this.llmClient = new LLMService();
-    this.vectorClient = new WeaviateClient();
+    this.llmClient = new LLMClient();
+    this.vectorClient = new VectorClient();
     this.embeddingGenerator = new CodeEmbeddingGenerator();
     this.existingPatterns = [];
   }
@@ -14,18 +14,18 @@ export class PatternDatasetGenerator {
   async initialize() {
     console.log('🚀 패턴 생성기 초기화 중...');
 
-    // Ollama와 Weaviate 서버 연결 상태 확인
-    const ollamaConnected = await this.llmClient.checkConnection();
-    const weaviateConnected = await this.vectorClient.checkConnection();
+    // LLM과 Vector DB 서버 연결 상태 확인
+    const llmConnected = await this.llmClient.checkConnection();
+    const vectorConnected = await this.vectorClient.checkConnection();
 
-    if (!ollamaConnected || !weaviateConnected) {
+    if (!llmConnected || !vectorConnected) {
       throw new Error('서비스 연결 실패');
     }
 
-    // Weaviate 스키마가 없으면 생성
+    // Vector DB 스키마/컬렉션이 없으면 생성
     await this.vectorClient.initializeSchema();
 
-    // 유사도 비교를 위해 Weaviate에 저장된 기존 패턴들을 로드
+    // 유사도 비교를 위해 Vector DB에 저장된 기존 패턴들을 로드
     await this.loadExistingPatterns();
 
     console.log('✅ 초기화 완료');
@@ -36,7 +36,7 @@ export class PatternDatasetGenerator {
 
     try {
       // Step 1: LLM을 사용하여 안티패턴과 권장패턴의 기본 구조 생성
-      console.log('🔍 Step 1: 기본 패턴 생성');
+      console.log('🔎 Step 1: 기본 패턴 생성');
       const basicPattern = await this.generateBasicPatternWithLLM(issueData);
 
       // Step 2: 코드에서 프레임워크 관련 어노테이션과 커스텀 클래스 추출 후 LLM으로 분석
@@ -61,7 +61,7 @@ export class PatternDatasetGenerator {
       console.log('💾 Step 6: 검증 및 저장');
       const validatedDataset = this.validateAndEnhanceDataset(finalDataset);
 
-      // 완성된 패턴 데이터를 Weaviate 벡터 DB에 저장
+      // 완성된 패턴 데이터를 Vector DB에 저장 (Weaviate 또는 Qdrant)
       await this.vectorClient.storePattern(validatedDataset);
 
       console.log(`✨ 완성: ${validatedDataset.issue_record_id}`);
@@ -431,7 +431,7 @@ export class PatternDatasetGenerator {
 
   async loadExistingPatterns() {
     try {
-      // Weaviate에서 저장된 모든 패턴을 조회하여 메모리에 로드
+      // Vector DB에서 저장된 모든 패턴을 조회하여 메모리에 로드
       this.existingPatterns = await this.vectorClient.getAllPatterns();
       console.log(`📚 기존 패턴 로드: ${this.existingPatterns.length}개`);
     } catch (error) {

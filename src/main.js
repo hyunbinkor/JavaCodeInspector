@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { UnifiedJavaCodeChecker } from './core/unifiedCodeChecker.js';
 import { PatternDatasetGenerator } from './core/patternGenerator.js';
-import { WeaviateClient } from './clients/weaviateClient.js';
+import { VectorClient } from './clients/vectorClient.js';
 import { issueCodeAnalyzer as IssueCodeAnalyzer } from './core/issueCodeAnalyzer.js';
 import { GuidelineExtractor } from './core/guidelineExtractor.js';
 import { LLMService } from './clients/llmService.js';
@@ -293,7 +293,7 @@ async function importGuidelinesToVectorDB(options) {
 
   // VectorDB 클라이언트 초기화 및 스키마 설정
   console.log('\n🔥 VectorDB에 가이드라인 import 중...');
-  const vectorClient = new WeaviateClient();
+  const vectorClient = new VectorClient();
 
   console.log('\n🔧 스키마 초기화 중...');
   try {
@@ -421,7 +421,7 @@ async function extractGuidelinesFromPDF(options) {
     // --import-to-db 옵션이 있을 경우 바로 VectorDB에 저장
     if (options.importToDb) {
       console.log('\n🔥 VectorDB에 가이드라인 import 중...');
-      const vectorClient = new WeaviateClient();
+      const vectorClient = new VectorClient();
 
       const results = await vectorClient.batchImportGuidelines(extractor.guidelines);
 
@@ -1413,7 +1413,7 @@ async function searchAndAnalyzePatterns(options) {
   const embeddings = await generator.generateEmbeddings(sourceCode, {});
   const queryVector = embeddings.combined_embedding;
 
-  const vectorClient = new WeaviateClient();
+  const vectorClient = new VectorClient();
   const similarPatterns = await vectorClient.searchSimilarPatterns(
     queryVector,
     parseInt(options.limit),
@@ -1656,7 +1656,7 @@ async function checkSystemStatus() {
     await unifiedChecker.initialize();
     console.log('모든 시스템이 정상 작동 중입니다.\n');
 
-    const vectorClient = new WeaviateClient();
+    const vectorClient = new VectorClient();
 
     // VectorDB에서 전체 패턴 조회
     const patterns = await vectorClient.getAllPatterns();

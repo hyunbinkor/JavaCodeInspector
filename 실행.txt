@@ -1,4 +1,4 @@
-# weaviate + ollama embeding 실행
+# vector+ ollama embeding 실행
 docker-compose up -d
 
 # Ollama에 임베딩 모델 설치 (처음 한 번만)
