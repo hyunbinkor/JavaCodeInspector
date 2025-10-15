@@ -1,0 +1,24 @@
+{
+    "class": "CodingGuideline",
+    "vectorizer": "text2vec-ollama",
+    "moduleConfig": {
+      "text2vec-ollama": {
+        "apiEndpoint": "http://ollama:11434",
+        "model": "nomic-embed-text"
+      }
+    },
+    "properties": [
+      {"name": "ruleId", "dataType": ["text"]},
+      {"name": "ruleTitle", "dataType": ["text"]},
+      {"name": "category", "dataType": ["text"]},
+      {"name": "checkType", "dataType": ["text"]},
+      {"name": "description", "dataType": ["text"]},
+      {"name": "keywords", "dataType": ["text[]"]},
+      {"name": "severity", "dataType": ["text"]},
+      {"name": "examples", "dataType": ["text"]},
+      {"name": "patterns", "dataType": ["text[]"]},
+      {"name": "message", "dataType": ["text"]},
+      {"name": "parentChapter", "dataType": ["text"]},
+      {"name": "isActive", "dataType": ["boolean"]}
+    ]
+  }

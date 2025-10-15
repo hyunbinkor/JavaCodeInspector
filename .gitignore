@@ -1,0 +1,10 @@
+# directory
+old
+node_modules
+diagram
+examples
+input
+output
+
+# environment
+.env

@@ -1,0 +1,1177 @@
+{
+  "metadata": {
+    "fileName": "test_code.java",
+    "filePath": "examples/test_code.java",
+    "analysisDate": "2025-10-13T07:02:35.733Z",
+    "codeLines": 105,
+    "codeSize": 3478,
+    "checkOptions": {
+      "guidelines": true,
+      "contextual": true,
+      "patterns": true
+    }
+  },
+  "summary": {
+    "overallScore": 100,
+    "totalIssues": 113,
+    "criticalIssues": 0,
+    "highIssues": 0,
+    "mediumIssues": 4,
+    "lowIssues": 109,
+    "warningCount": 0
+  },
+  "statistics": {
+    "byCategory": {
+      "naming_convention": 1,
+      "code_style": 3,
+      "formatting": 109
+    },
+    "bySeverity": {
+      "CRITICAL": 0,
+      "HIGH": 0,
+      "MEDIUM": 4,
+      "LOW": 109
+    },
+    "bySource": {
+      "llm_contextual": 1,
+      "development_guideline": 112
+    },
+    "warningsByCategory": {}
+  },
+  "topIssues": [
+    {
+      "title": "변수 명명 규칙",
+      "category": "naming_convention",
+      "severity": "MEDIUM",
+      "line": 44,
+      "description": "변수명 'rs'가 명명 규칙을 위반합니다. 의미가 명확하지 않은 축약형 변수명을 사용했습니다.",
+      "source": "llm_contextual",
+      "effort": 2
+    },
+    {
+      "title": "한 라인에 하나의 변수만 선언",
+      "category": "code_style",
+      "severity": "MEDIUM",
+      "line": 22,
+      "description": "한 라인에 하나의 변수만 선언해야 합니다",
+      "source": "development_guideline",
+      "effort": 2
+    },
+    {
+      "title": "한 라인에 하나의 변수만 선언",
+      "category": "code_style",
+      "severity": "MEDIUM",
+      "line": 24,
+      "description": "한 라인에 하나의 변수만 선언해야 합니다",
+      "source": "development_guideline",
+      "effort": 2
+    },
+    {
+      "title": "한 라인에 하나의 변수만 선언",
+      "category": "code_style",
+      "severity": "MEDIUM",
+      "line": 28,
+      "description": "한 라인에 하나의 변수만 선언해야 합니다",
+      "source": "development_guideline",
+      "effort": 2
+    },
+    {
+      "title": "줄 끝 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 16,
+      "description": "줄 끝에 불필요한 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 16,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 17,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 18,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "줄 끝 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 19,
+      "description": "줄 끝에 불필요한 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 19,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 20,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 21,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 22,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 23,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 24,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 25,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 26,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "줄 끝 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 27,
+      "description": "줄 끝에 불필요한 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "다중 공백",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 27,
+      "description": "불필요한 다중 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    },
+    {
+      "title": "메서드명과 괄호 사이 공백 금지",
+      "category": "formatting",
+      "severity": "LOW",
+      "line": 28,
+      "description": "메서드 이름과 괄호 사이에 공백이 있습니다",
+      "source": "development_guideline",
+      "effort": 1
+    }
+  ],
+  "styleAndGuideline": {
+    "score": 100,
+    "violationCount": 113,
+    "warningCount": 0,
+    "topViolations": [
+      {
+        "title": "메서드명과 괄호 사이 공백 금지",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 28,
+        "description": "메서드 이름과 괄호 사이에 공백이 있습니다",
+        "ruleId": "3.3.7.6.1"
+      },
+      {
+        "title": "메서드명과 괄호 사이 공백 금지",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 51,
+        "description": "메서드 이름과 괄호 사이에 공백이 있습니다",
+        "ruleId": "3.3.7.6.1"
+      },
+      {
+        "title": "메서드명과 괄호 사이 공백 금지",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 54,
+        "description": "메서드 이름과 괄호 사이에 공백이 있습니다",
+        "ruleId": "3.3.7.6.1"
+      },
+      {
+        "title": "메서드명과 괄호 사이 공백 금지",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 85,
+        "description": "메서드 이름과 괄호 사이에 공백이 있습니다",
+        "ruleId": "3.3.7.6.1"
+      },
+      {
+        "title": "메서드명과 괄호 사이 공백 금지",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 99,
+        "description": "메서드 이름과 괄호 사이에 공백이 있습니다",
+        "ruleId": "3.3.7.6.1"
+      },
+      {
+        "title": "라인 길이 제한",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 95,
+        "description": "한 라인이 100자를 초과합니다",
+        "ruleId": "3.3.1.1.2"
+      },
+      {
+        "title": "한 라인에 하나의 변수만 선언",
+        "category": "code_style",
+        "severity": "MEDIUM",
+        "line": 22,
+        "description": "한 라인에 하나의 변수만 선언해야 합니다",
+        "ruleId": "3.3.5.3"
+      },
+      {
+        "title": "한 라인에 하나의 변수만 선언",
+        "category": "code_style",
+        "severity": "MEDIUM",
+        "line": 24,
+        "description": "한 라인에 하나의 변수만 선언해야 합니다",
+        "ruleId": "3.3.5.3"
+      },
+      {
+        "title": "한 라인에 하나의 변수만 선언",
+        "category": "code_style",
+        "severity": "MEDIUM",
+        "line": 28,
+        "description": "한 라인에 하나의 변수만 선언해야 합니다",
+        "ruleId": "3.3.5.3"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 16,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 19,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 27,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 32,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 34,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 37,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 40,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 61,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 68,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 73,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 76,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 84,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 92,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "줄 끝 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 98,
+        "description": "줄 끝에 불필요한 공백이 있습니다",
+        "ruleId": "trailing_whitespace"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 16,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 17,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 18,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 19,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 20,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 21,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 22,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 23,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 24,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 25,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 26,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 27,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 28,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 29,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 30,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 31,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 32,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 33,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 34,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 35,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 36,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 37,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 38,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 39,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 40,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 41,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 42,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 43,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 44,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 45,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 46,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 47,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 48,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 49,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 50,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 51,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 52,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 53,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 54,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 55,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 56,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 57,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 58,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 59,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 60,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 61,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 62,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 63,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 64,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 65,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 66,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 67,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 68,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 69,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 70,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 71,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 72,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 73,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 74,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 75,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 76,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 77,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 78,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 79,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 80,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 81,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 82,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 83,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 84,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 85,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 86,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 87,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 88,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 89,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 90,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 91,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 92,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 93,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 94,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 95,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 96,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 97,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 98,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 99,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 100,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 101,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 102,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 103,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "다중 공백",
+        "category": "formatting",
+        "severity": "LOW",
+        "line": 104,
+        "description": "불필요한 다중 공백이 있습니다",
+        "ruleId": "multiple_spaces"
+      },
+      {
+        "title": "변수 명명 규칙",
+        "category": "naming_convention",
+        "severity": "MEDIUM",
+        "line": 44,
+        "description": "변수명 'rs'가 명명 규칙을 위반합니다. 의미가 명확하지 않은 축약형 변수명을 사용했습니다.",
+        "ruleId": "variable_naming_convention"
+      }
+    ],
+    "topWarnings": []
+  },
+  "patternAnalysis": {
+    "score": 100,
+    "detectedIssuesCount": 0,
+    "similarPatternsCount": 0,
+    "topDetectedIssues": []
+  },
+  "recommendations": [
+    {
+      "category": "naming_convention",
+      "issueCount": 1,
+      "priority": 50,
+      "quickFixesAvailable": 1,
+      "quickFixTitles": [
+        "변수 명명 규칙"
+      ],
+      "improvementAreas": []
+    },
+    {
+      "category": "code_style",
+      "issueCount": 3,
+      "priority": 30,
+      "quickFixesAvailable": 3,
+      "quickFixTitles": [
+        "한 라인에 하나의 변수만 선언",
+        "한 라인에 하나의 변수만 선언",
+        "한 라인에 하나의 변수만 선언"
+      ],
+      "improvementAreas": []
+    },
+    {
+      "category": "formatting",
+      "issueCount": 109,
+      "priority": 20,
+      "quickFixesAvailable": 3,
+      "quickFixTitles": [
+        "줄 끝 공백",
+        "다중 공백",
+        "다중 공백"
+      ],
+      "improvementAreas": []
+    }
+  ]
+}

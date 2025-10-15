@@ -1,0 +1,313 @@
+{
+  "metadata": {
+    "fileName": "test_code_a.java",
+    "filePath": "examples/test_code_a.java",
+    "analysisDate": "2025-10-13T08:09:55.650Z",
+    "codeLines": 212,
+    "codeSize": 6985,
+    "checkOptions": {
+      "guidelines": true,
+      "contextual": true,
+      "patterns": true
+    }
+  },
+  "summary": {
+    "overallScore": 99,
+    "totalIssues": 12,
+    "criticalIssues": 0,
+    "highIssues": 1,
+    "mediumIssues": 11,
+    "lowIssues": 0,
+    "warningCount": 0
+  },
+  "statistics": {
+    "byCategory": {
+      "architecture": 1,
+      "security_vulnerability": 2,
+      "resource_management": 6,
+      "performance_issue": 1,
+      "exception_handling": 2
+    },
+    "bySeverity": {
+      "CRITICAL": 0,
+      "HIGH": 1,
+      "MEDIUM": 11,
+      "LOW": 0
+    },
+    "bySource": {
+      "llm_contextual": 1,
+      "pattern_analysis": 11
+    },
+    "warningsByCategory": {}
+  },
+  "topIssues": [
+    {
+      "title": "비즈니스 로직과 UI 로직 분리",
+      "category": "architecture",
+      "severity": "HIGH",
+      "line": 32,
+      "description": "Service 클래스에서 직접 DataSource를 통해 DB 접근을 하고 있습니다. Service는 비즈니스 로직에 집중해야 하며, 데이터 접근은 Repository/DAO 계층에서 처리해야 합니다.",
+      "source": "llm_contextual",
+      "effort": 4
+    },
+    {
+      "title": "SQL 쿼리 문자열 연결로 인한 SQL 인젝션 취약점",
+      "category": "security_vulnerability",
+      "severity": "MEDIUM",
+      "line": 47,
+      "description": "SQL Injection 취약점: 문자열 연결로 SQL 생성",
+      "source": "pattern_analysis",
+      "effort": 4
+    },
+    {
+      "title": "SQL 쿼리 문자열 연결로 인한 SQL 인젝션 취약점",
+      "category": "security_vulnerability",
+      "severity": "MEDIUM",
+      "line": 128,
+      "description": "SQL Injection 취약점: 문자열 연결로 SQL 생성",
+      "source": "pattern_analysis",
+      "effort": 4
+    },
+    {
+      "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+      "category": "resource_management",
+      "severity": "MEDIUM",
+      "line": 44,
+      "description": "Database Connection이 닫히지 않아 리소스 누수 위험",
+      "source": "pattern_analysis",
+      "effort": 3
+    },
+    {
+      "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+      "category": "resource_management",
+      "severity": "MEDIUM",
+      "line": 80,
+      "description": "Database Connection이 닫히지 않아 리소스 누수 위험",
+      "source": "pattern_analysis",
+      "effort": 3
+    },
+    {
+      "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+      "category": "resource_management",
+      "severity": "MEDIUM",
+      "line": 125,
+      "description": "Database Connection이 닫히지 않아 리소스 누수 위험",
+      "source": "pattern_analysis",
+      "effort": 3
+    },
+    {
+      "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+      "category": "resource_management",
+      "severity": "MEDIUM",
+      "line": 154,
+      "description": "Database Connection이 닫히지 않아 리소스 누수 위험",
+      "source": "pattern_analysis",
+      "effort": 3
+    },
+    {
+      "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+      "category": "resource_management",
+      "severity": "MEDIUM",
+      "line": 180,
+      "description": "Database Connection이 닫히지 않아 리소스 누수 위험",
+      "source": "pattern_analysis",
+      "effort": 3
+    },
+    {
+      "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+      "category": "resource_management",
+      "severity": "MEDIUM",
+      "line": 193,
+      "description": "Database Connection이 닫히지 않아 리소스 누수 위험",
+      "source": "pattern_analysis",
+      "effort": 3
+    },
+    {
+      "title": "주문 처리에서 N+1 쿼리로 인한 성능 저하",
+      "category": "performance_issue",
+      "severity": "MEDIUM",
+      "line": 188,
+      "description": "N+1 쿼리 성능 문제 - 루프 내에서 개별 데이터베이스 쿼리 실행",
+      "source": "pattern_analysis",
+      "effort": 3
+    },
+    {
+      "title": "결제 처리 중 예외 처리 누락으로 인한 데이터 일관성 문제",
+      "category": "exception_handling",
+      "severity": "MEDIUM",
+      "line": 66,
+      "description": "printStackTrace() 사용으로 부적절한 예외 처리",
+      "source": "pattern_analysis",
+      "effort": 2
+    },
+    {
+      "title": "결제 처리 중 예외 처리 누락으로 인한 데이터 일관성 문제",
+      "category": "exception_handling",
+      "severity": "MEDIUM",
+      "line": 137,
+      "description": "printStackTrace() 사용으로 부적절한 예외 처리",
+      "source": "pattern_analysis",
+      "effort": 2
+    }
+  ],
+  "styleAndGuideline": {
+    "score": 98,
+    "violationCount": 1,
+    "warningCount": 0,
+    "topViolations": [
+      {
+        "title": "비즈니스 로직과 UI 로직 분리",
+        "category": "architecture",
+        "severity": "HIGH",
+        "line": 32,
+        "description": "Service 클래스에서 직접 DataSource를 통해 DB 접근을 하고 있습니다. Service는 비즈니스 로직에 집중해야 하며, 데이터 접근은 Repository/DAO 계층에서 처리해야 합니다.",
+        "ruleId": "business_logic_separation"
+      }
+    ],
+    "topWarnings": []
+  },
+  "patternAnalysis": {
+    "score": 100,
+    "detectedIssuesCount": 11,
+    "similarPatternsCount": 5,
+    "topDetectedIssues": [
+      {
+        "title": "SQL 쿼리 문자열 연결로 인한 SQL 인젝션 취약점",
+        "category": "security_vulnerability",
+        "severity": "MEDIUM",
+        "line": 47,
+        "description": "SQL Injection 취약점: 문자열 연결로 SQL 생성"
+      },
+      {
+        "title": "SQL 쿼리 문자열 연결로 인한 SQL 인젝션 취약점",
+        "category": "security_vulnerability",
+        "severity": "MEDIUM",
+        "line": 128,
+        "description": "SQL Injection 취약점: 문자열 연결로 SQL 생성"
+      },
+      {
+        "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+        "category": "resource_management",
+        "severity": "MEDIUM",
+        "line": 44,
+        "description": "Database Connection이 닫히지 않아 리소스 누수 위험"
+      },
+      {
+        "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+        "category": "resource_management",
+        "severity": "MEDIUM",
+        "line": 80,
+        "description": "Database Connection이 닫히지 않아 리소스 누수 위험"
+      },
+      {
+        "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+        "category": "resource_management",
+        "severity": "MEDIUM",
+        "line": 125,
+        "description": "Database Connection이 닫히지 않아 리소스 누수 위험"
+      },
+      {
+        "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+        "category": "resource_management",
+        "severity": "MEDIUM",
+        "line": 154,
+        "description": "Database Connection이 닫히지 않아 리소스 누수 위험"
+      },
+      {
+        "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+        "category": "resource_management",
+        "severity": "MEDIUM",
+        "line": 180,
+        "description": "Database Connection이 닫히지 않아 리소스 누수 위험"
+      },
+      {
+        "title": "데이터베이스 커넥션 누수로 인한 서비스 장애",
+        "category": "resource_management",
+        "severity": "MEDIUM",
+        "line": 193,
+        "description": "Database Connection이 닫히지 않아 리소스 누수 위험"
+      },
+      {
+        "title": "주문 처리에서 N+1 쿼리로 인한 성능 저하",
+        "category": "performance_issue",
+        "severity": "MEDIUM",
+        "line": 188,
+        "description": "N+1 쿼리 성능 문제 - 루프 내에서 개별 데이터베이스 쿼리 실행"
+      },
+      {
+        "title": "결제 처리 중 예외 처리 누락으로 인한 데이터 일관성 문제",
+        "category": "exception_handling",
+        "severity": "MEDIUM",
+        "line": 66,
+        "description": "printStackTrace() 사용으로 부적절한 예외 처리"
+      },
+      {
+        "title": "결제 처리 중 예외 처리 누락으로 인한 데이터 일관성 문제",
+        "category": "exception_handling",
+        "severity": "MEDIUM",
+        "line": 137,
+        "description": "printStackTrace() 사용으로 부적절한 예외 처리"
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "category": "security_vulnerability",
+      "issueCount": 2,
+      "priority": 90,
+      "quickFixesAvailable": 2,
+      "quickFixTitles": [
+        "SQL 쿼리 문자열 연결로 인한 SQL 인젝션 취약점",
+        "SQL 쿼리 문자열 연결로 인한 SQL 인젝션 취약점"
+      ],
+      "improvementAreas": [
+        "security_vulnerability 관련 2개 복합 이슈 체계적 개선 필요"
+      ]
+    },
+    {
+      "category": "resource_management",
+      "issueCount": 6,
+      "priority": 80,
+      "quickFixesAvailable": 3,
+      "quickFixTitles": [
+        "데이터베이스 커넥션 누수로 인한 서비스 장애",
+        "데이터베이스 커넥션 누수로 인한 서비스 장애",
+        "데이터베이스 커넥션 누수로 인한 서비스 장애"
+      ],
+      "improvementAreas": []
+    },
+    {
+      "category": "performance_issue",
+      "issueCount": 1,
+      "priority": 70,
+      "quickFixesAvailable": 1,
+      "quickFixTitles": [
+        "주문 처리에서 N+1 쿼리로 인한 성능 저하"
+      ],
+      "improvementAreas": []
+    },
+    {
+      "category": "exception_handling",
+      "issueCount": 2,
+      "priority": 60,
+      "quickFixesAvailable": 2,
+      "quickFixTitles": [
+        "결제 처리 중 예외 처리 누락으로 인한 데이터 일관성 문제",
+        "결제 처리 중 예외 처리 누락으로 인한 데이터 일관성 문제"
+      ],
+      "improvementAreas": []
+    },
+    {
+      "category": "architecture",
+      "issueCount": 1,
+      "priority": 40,
+      "quickFixesAvailable": 1,
+      "quickFixTitles": [
+        "비즈니스 로직과 UI 로직 분리"
+      ],
+      "improvementAreas": [
+        "architecture 관련 1개 복합 이슈 체계적 개선 필요"
+      ]
+    }
+  ]
+}

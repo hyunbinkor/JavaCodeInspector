@@ -1,0 +1,18 @@
+{
+  "issueId": "JIRA-12345",
+  "title": "Database connection leak causing service outage",
+  "description": "The UserService is not properly closing database connections, leading to connection pool exhaustion and service unavailability during peak hours.",
+  "problematicCode": "@Service\npublic class UserService {\n    \n    @Autowired\n    private DataSource dataSource;\n    \n    public User createUser(String name, String email) {\n        Connection conn = dataSource.getConnection();\n        String sql = \"INSERT INTO users (name, email) VALUES ('\" + name + \"', '\" + email + \"')\";\n        PreparedStatement stmt = conn.prepareStatement(sql);\n        stmt.executeUpdate();\n        // conn.close() 누락!\n        \n        return findUserByName(name);\n    }\n    \n    private User findUserByName(String name) {\n        // 사용자 조회 로직\n        return new User(name);\n    }\n}",
+  "fixedCode": "@Service\n@Transactional\npublic class UserService {\n    \n    @Autowired\n    private DataSource dataSource;\n    \n    public User createUser(String name, String email) {\n        try (Connection conn = dataSource.getConnection()) {\n            String sql = \"INSERT INTO users (name, email) VALUES (?, ?)\";\n            PreparedStatement stmt = conn.prepareStatement(sql);\n            stmt.setString(1, name);\n            stmt.setString(2, email);\n            stmt.executeUpdate();\n            \n            return findUserByName(name);\n        }\n    }\n    \n    private User findUserByName(String name) {\n        // 사용자 조회 로직\n        return new User(name);\n    }\n}",
+  "category": "resource_management",
+  "severity": "HIGH",
+  "occurrenceCount": 15,
+  "resolutionTime": "2.5 hours",
+  "tags": ["database", "connection", "leak", "resource", "pool"],
+  "createdDate": "2024-01-15T09:30:00Z",
+  "assignee": "john.doe@company.com",
+  "reporter": "jane.smith@company.com",
+  "environment": "production",
+  "affectedServices": ["user-service", "auth-service"],
+  "rootCause": "Missing connection cleanup in manual connection handling"
+}

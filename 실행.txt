@@ -1,0 +1,58 @@
+# weaviate + ollama embeding 실행
+docker-compose up -d
+
+# Ollama에 임베딩 모델 설치 (처음 한 번만)
+docker exec -it code-pattern-ollama ollama pull nomic-embed-text
+
+# vector admin
+git clone https://github.com/Mintplex-Labs/vector-admin.git
+cd vector-admin
+docker-compose up -d --build postgres
+docker run -d ^
+  --name vectoradmin ^
+  -p 3001:3001 ^
+  -e SERVER_PORT="3001" ^
+  -e JWT_SECRET="thisismysecret" ^
+  -e INNGEST_EVENT_KEY="background_workers" ^
+  -e INNGEST_SIGNING_KEY="random-string-goes-here" ^
+  -e INNGEST_LANDING_PAGE="true" ^
+  -e DATABASE_CONNECTION_STRING="postgresql://vectoradmin:password@host.docker.internal:5433/vdbms" ^
+  mintplexlabs/vectoradmin
+
+root@vectoradmin.com  password
+
+http://host.docker.internal:8080 my-secret-key
+
+
+# 디렉토리 내 모든 JSON 파일 처리
+npm start -- batch -i examples -o output
+
+# 기본 분석 (문제 식별)
+npm start -- search -c examples/test_code.java -l 5
+
+# 수정안 포함 전체 분석
+npm start -- search -c examples/test_code.java -l 5 --fix
+
+# 결과 저장
+npm start -- search -c examples/test_code.java -l 5 --fix -o result.json
+
+# 수정완료된 코드 재점검
+npm start -- search -c examples/test_code_fixed.java -l 5 --fix -o result.json
+
+npm start -- search -c examples/test_code_fixed2.java -l 5 --fix -o result.json
+
+# PDF에서 가이드라인 추출 (기본)
+npm start -- extract-guidelines -i development_guide.pdf -o extracted_rules.json
+
+# PDF에서 추출 후 바로 VectorDB에 import
+npm start -- extract-guidelines -i development_guide.pdf -o extracted_rules.json --import-to-db
+
+# 이미 추출된 JSON을 VectorDB에 저장
+npm start -- import-guidelines -i extracted_rules.json
+
+# 가이드라인만 검사
+npm start -- check-guidelines -c examples/guide_test_code.java
+npm start -- check-guidelines -c examples/guide_test_code.java --fix -o result.json
+
+# 전체 통합 검사 (패턴 + 가이드라인)
+npm start -- check -c examples/test_code.java -o report.json

@@ -1,0 +1,431 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Code Pattern Issue Dataset Schema",
+  "description": "사내 Java 프레임워크 코딩 이슈 패턴 데이터셋",
+  "type": "object",
+  "required": [
+    "issue_record_id",
+    "metadata",
+    "anti_pattern",
+    "recommended_pattern",
+    "detection_rules",
+    "impact_analysis",
+    "framework_context",
+    "embeddings"
+  ],
+  "properties": {
+    "issue_record_id": {
+      "type": "string",
+      "pattern": "^[A-Z_]+_\\d{3}$",
+      "description": "이슈 레코드 고유 식별자 (예: CONN_LEAK_001, SQL_INJ_045)",
+      "examples": ["CONN_LEAK_001", "SQL_INJ_045", "N_PLUS_ONE_078"]
+    },
+    
+    "metadata": {
+      "type": "object",
+      "required": ["title", "category", "severity", "created_date", "last_updated"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "이슈의 간단한 제목",
+          "examples": ["Database Connection 미해제", "SQL 인젝션 취약점"]
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "resource_management",
+            "security_vulnerability", 
+            "performance_issue",
+            "framework_misuse",
+            "business_logic_error",
+            "exception_handling",
+            "concurrency_issue",
+            "architecture_violation"
+          ],
+          "description": "이슈 카테고리"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+          "description": "심각도 레벨"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "검색 및 분류를 위한 태그",
+          "examples": [["database", "connection", "leak"], ["sql", "injection", "security"]]
+        },
+        "created_date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "레코드 생성일"
+        },
+        "last_updated": {
+          "type": "string", 
+          "format": "date-time",
+          "description": "마지막 업데이트일"
+        }
+      }
+    },
+
+    "anti_pattern": {
+      "type": "object",
+      "required": ["code_template", "pattern_signature", "problematic_characteristics"],
+      "properties": {
+        "code_template": {
+          "type": "string",
+          "description": "문제가 되는 코드 패턴 템플릿",
+          "examples": ["Connection conn = dataSource.getConnection();\n// conn.close() 누락"]
+        },
+        "pattern_signature": {
+          "type": "object",
+          "properties": {
+            "ast_signature": {
+              "type": "string",
+              "description": "AST 기반 패턴 시그니처",
+              "examples": ["VariableDeclaration(Connection) -> MethodInvocation(getConnection) -> MissingCleanup"]
+            },
+            "semantic_signature": {
+              "type": "string", 
+              "description": "의미론적 패턴 시그니처",
+              "examples": ["resource_creation_without_cleanup"]
+            },
+            "regex_patterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "정규표현식 패턴 목록",
+              "examples": [["Connection\\s+\\w+\\s*=.*getConnection\\(\\)", "(?!.*close\\(\\))"]]
+            }
+          }
+        },
+        "problematic_characteristics": {
+          "type": "object",
+          "properties": {
+            "missing_operations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "누락된 필수 작업들",
+              "examples": [["close()", "commit()", "rollback()"]]
+            },
+            "incorrect_usage": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "잘못된 사용 패턴들",
+              "examples": [["manual_connection_handling", "string_concatenation_in_sql"]]
+            },
+            "framework_violations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "프레임워크 규칙 위반 사항들",
+              "examples": [["missing_transaction_annotation", "bypassing_framework_lifecycle"]]
+            }
+          }
+        }
+      }
+    },
+
+    "recommended_pattern": {
+      "type": "object",
+      "required": ["code_template", "pattern_name", "implementation_guide"],
+      "properties": {
+        "code_template": {
+          "type": "string",
+          "description": "권장되는 올바른 코드 패턴",
+          "examples": ["try (Connection conn = dataSource.getConnection()) {\n    // 작업 수행\n}"]
+        },
+        "pattern_name": {
+          "type": "string",
+          "description": "권장 패턴의 이름",
+          "examples": ["try_with_resources", "prepared_statement_with_parameters"]
+        },
+        "implementation_guide": {
+          "type": "object",
+          "properties": {
+            "best_practices": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "모범 사례 가이드라인",
+              "examples": [["리소스는 try-with-resources 사용", "SQL 파라미터는 PreparedStatement 바인딩"]]
+            },
+            "framework_specific_notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "프레임워크 특화 주의사항",
+              "examples": [["@Transactional 어노테이션 사용 시 자동 커밋/롤백", "BaseService 상속 시 기본 예외 처리 제공"]]
+            },
+            "alternative_approaches": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "approach_name": {"type": "string"},
+                  "code_example": {"type": "string"},
+                  "use_case": {"type": "string"}
+                }
+              },
+              "description": "대안적 접근법들"
+            }
+          }
+        }
+      }
+    },
+
+    "detection_rules": {
+      "type": "object",
+      "required": ["ast_rules", "semantic_rules"],
+      "properties": {
+        "ast_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rule_name": {"type": "string"},
+              "rule_expression": {"type": "string"},
+              "confidence_score": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          },
+          "description": "AST 기반 탐지 규칙들",
+          "examples": [[
+            {
+              "rule_name": "connection_without_close",
+              "rule_expression": "VariableDeclaration(Connection) AND NOT MethodInvocation(close)",
+              "confidence_score": 0.9
+            }
+          ]]
+        },
+        "semantic_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rule_name": {"type": "string"},
+              "rule_description": {"type": "string"},
+              "pattern_indicators": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            }
+          },
+          "description": "의미론적 탐지 규칙들"
+        },
+        "heuristic_rules": {
+          "type": "array",
+          "items": {
+            "type": "object", 
+            "properties": {
+              "rule_name": {"type": "string"},
+              "logic": {"type": "string"},
+              "false_positive_filters": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            }
+          },
+          "description": "휴리스틱 기반 규칙들"
+        }
+      }
+    },
+
+    "impact_analysis": {
+      "type": "object",
+      "required": ["production_impact", "historical_data"],
+      "properties": {
+        "production_impact": {
+          "type": "object",
+          "properties": {
+            "failure_scenarios": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "프로덕션에서 발생 가능한 장애 시나리오",
+              "examples": [["connection_pool_exhaustion", "memory_leak", "service_unavailability"]]
+            },
+            "performance_degradation": {
+              "type": "object",
+              "properties": {
+                "response_time_impact": {"type": "string"},
+                "throughput_impact": {"type": "string"},
+                "resource_consumption": {"type": "string"}
+              }
+            },
+            "security_implications": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "보안 영향도",
+              "examples": [["data_breach_risk", "privilege_escalation", "injection_attack"]]
+            }
+          }
+        },
+        "historical_data": {
+          "type": "object",
+          "properties": {
+            "occurrence_frequency": {
+              "type": "integer",
+              "description": "과거 발생 빈도"
+            },
+            "incident_references": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "incident_id": {"type": "string"},
+                  "date": {"type": "string", "format": "date"},
+                  "impact_level": {"type": "string"},
+                  "resolution_time": {"type": "string"}
+                }
+              },
+              "description": "관련 과거 인시던트 목록"
+            },
+            "fix_effort_estimation": {
+              "type": "object",
+              "properties": {
+                "complexity": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]},
+                "estimated_hours": {"type": "number"},
+                "required_expertise": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "framework_context": {
+      "type": "object",
+      "required": ["framework_version", "applicable_components"],
+      "properties": {
+        "framework_version": {
+          "type": "string",
+          "description": "적용 가능한 프레임워크 버전",
+          "examples": ["CustomFramework-2.1.x", "DataAccessFramework-3.x"]
+        },
+        "applicable_components": {
+          "type": "object",
+          "properties": {
+            "custom_annotations": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "관련 커스텀 어노테이션들",
+              "examples": [["@DatabaseTransaction", "@BusinessLogic", "@CacheEnabled"]]
+            },
+            "custom_classes": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "관련 커스텀 클래스들", 
+              "examples": [["BaseService", "DataAccessLayer", "ConnectionManager"]]
+            },
+            "framework_apis": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "관련 프레임워크 API들",
+              "examples": [["CustomDbHelper.getConnection()", "TransactionManager.begin()"]]
+            }
+          }
+        },
+        "compatibility_notes": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "버전별 호환성 주의사항"
+        }
+      }
+    },
+
+    "embeddings": {
+      "type": "object",
+      "description": "사전 계산된 임베딩 벡터들",
+      "properties": {
+        "combined_embedding": {
+          "type": "array",
+          "items": {"type": "number"},
+          "description": "결합된 최종 임베딩 벡터 (480차원)",
+          "minItems": 480,
+          "maxItems": 480
+        },
+        "component_embeddings": {
+          "type": "object",
+          "properties": {
+            "syntactic_embedding": {
+              "type": "array",
+              "items": {"type": "number"},
+              "minItems": 128,
+              "maxItems": 128
+            },
+            "semantic_embedding": {
+              "type": "array", 
+              "items": {"type": "number"},
+              "minItems": 256,
+              "maxItems": 256
+            },
+            "framework_embedding": {
+              "type": "array",
+              "items": {"type": "number"}, 
+              "minItems": 64,
+              "maxItems": 64
+            },
+            "context_embedding": {
+              "type": "array",
+              "items": {"type": "number"},
+              "minItems": 32,
+              "maxItems": 32
+            }
+          }
+        },
+        "embedding_metadata": {
+          "type": "object",
+          "properties": {
+            "embedding_version": {"type": "string"},
+            "created_timestamp": {"type": "string", "format": "date-time"},
+            "model_version": {"type": "string"}
+          }
+        }
+      }
+    },
+
+    "validation_info": {
+      "type": "object",
+      "description": "데이터셋 검증 정보",
+      "properties": {
+        "reviewed_by": {"type": "string"},
+        "review_date": {"type": "string", "format": "date"},
+        "validation_status": {
+          "type": "string",
+          "enum": ["DRAFT", "REVIEWED", "APPROVED", "DEPRECATED"]
+        },
+        "quality_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "데이터 품질 점수"
+        }
+      }
+    },
+
+    "related_patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern_id": {"type": "string"},
+          "relationship_type": {
+            "type": "string",
+            "enum": ["similar", "complementary", "alternative", "prerequisite", "consequence"]
+          },
+          "similarity_score": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      },
+      "description": "관련된 다른 패턴들과의 관계"
+    }
+  }
+}
