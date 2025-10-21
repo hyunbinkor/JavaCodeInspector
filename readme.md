@@ -191,50 +191,84 @@ JSON 리포트 출력
 
 ### 4.1 CLI 명령어
 
-#### 기본 사용법
+#### 최초 설정
 ```bash
-node main.js <command> [options]
+# vector+ ollama embeding 실행
+docker-compose up -d
+
+# Ollama에 임베딩 모델 설치
+docker exec -it code-pattern-ollama ollama pull nomic-embed-text
+
+# 디렉토리 내 모든 JSON 파일 처리 (issue 추가 시 재진행)
+npm start -- batch -i examples -o output
 ```
 
 #### 주요 명령어
 
 **1. 통합 검사 (권장)**
 ```bash
-node main.js check -c Sample.java -o report.json
+# 전체 통합 검사 (패턴 + 가이드라인)
+npm start -- check -c examples/test_code.java -o report.json
 ```
-옵션:
-- `--skip-patterns`: 패턴 분석 생략
-- `--skip-guidelines`: 가이드라인 검사 생략
-- `--skip-contextual`: LLM 컨텍스트 검사 생략
-- `--generate-fixes`: 자동 수정안 생성
-- `-l, --limit <number>`: 패턴 검색 결과 수 (기본 10)
 
 **2. 가이드라인 전용 검사**
 ```bash
-node main.js check-guidelines -c Sample.java --include-contextual --fix
+# 가이드라인 검사
+npm start -- check-guidelines -c examples/guide_test_code.java
+
+# 가이드라인 검사 및 수정안 생성
+npm start -- check-guidelines -c examples/guide_test_code.java --fix -o result.json
 ```
-옵션:
-- `--include-contextual`: LLM 컨텍스트 검사 포함
-- `--fix`: 수정안 생성
 
 **3. 패턴 검색 및 분석**
 ```bash
-node main.js search -c Sample.java -l 5 --fix -o analysis.json
+# 패턴 검사
+npm start -- search -c examples/test_code.java -l 5
+
+# 패턴 검사 및 수정안 생성
+npm start -- search -c examples/test_code.java -l 5 --fix -o result.json
 ```
 
 **4. PDF 가이드 추출**
 ```bash
-node main.js extract-guidelines -i guide.pdf -o guidelines.json --import-to-db
+# PDF에서 가이드라인 추출
+npm start -- extract-guidelines -i development_guide.pdf -o extracted_rules.json
+
+# PDF에서 추출 후 바로 VectorDB에 import
+npm start -- extract-guidelines -i development_guide.pdf -o extracted_rules.json --import-to-db
 ```
 
 **5. 가이드라인 VectorDB 저장**
 ```bash
-node main.js import-guidelines -i guidelines.json
+# 이미 추출된 JSON을 VectorDB에 저장
+npm start -- import-guidelines -i extracted_rules.json
 ```
 
 **6. 시스템 상태 확인**
 ```bash
 node main.js status
+```
+
+**d**
+```bash
+# vector admin
+git clone https://github.com/Mintplex-Labs/vector-admin.git
+cd vector-admin
+docker-compose up -d --build postgres
+docker run -d ^
+  --name vectoradmin ^
+  -p 3001:3001 ^
+  -e SERVER_PORT="3001" ^
+  -e JWT_SECRET="thisismysecret" ^
+  -e INNGEST_EVENT_KEY="background_workers" ^
+  -e INNGEST_SIGNING_KEY="random-string-goes-here" ^
+  -e INNGEST_LANDING_PAGE="true" ^
+  -e DATABASE_CONNECTION_STRING="postgresql://vectoradmin:password@host.docker.internal:5433/vdbms" ^
+  mintplexlabs/vectoradmin
+
+root@vectoradmin.com  password
+
+http://host.docker.internal:8080 my-secret-key
 ```
 
 ### 4.2 환경 설정
