@@ -134,52 +134,64 @@ export class PatternDatasetGenerator {
     // 빈 코드가 입력되는 경우를 방지하여 기본값 설정
     const src = (typeof code === 'string' && code.trim().length > 0) ? code : '// no code';
 
-    // AST 파싱을 통해 코드 구조(클래스, 메서드, 순환복잡도 등)를 분석하여 벡터화
-    console.log('  📊 AST 파싱 및 구문적 임베딩 생성...');
+    console.log('  📊 임베딩 생성 시작...');
+    console.log('     구조: 구문(128) + 의미(256) + 프레임워크(64) + 비즈니스(32) = 480차원');
+    
+    // 각 임베딩 생성
     let syntacticEmbedding = [];
-    try {
-      syntacticEmbedding = await this.embeddingGenerator.embedAstStructure(src);
-      if (!Array.isArray(syntacticEmbedding)) throw new Error('invalid syntacticEmbedding');
-    } catch (e) {
-      console.warn('AST 임베딩 생성 실패, 기본 벡터 사용:', e.message);
-      syntacticEmbedding = new Array(480).fill(0);
-    }
-
-    // 코드의 의미(변수명, 메서드명, 주석 등)를 분석하여 의미론적 벡터 생성
-    console.log('  🧠 의미론적 임베딩 생성...');
     let semanticEmbedding = [];
-    try {
-      semanticEmbedding = await this.embeddingGenerator.embedCodeSemantics(src);
-      if (!Array.isArray(semanticEmbedding)) throw new Error('invalid semanticEmbedding');
-    } catch (e) {
-      console.warn('의미론적 임베딩 생성 실패, 기본 벡터 사용:', e.message);
-      semanticEmbedding = new Array(480).fill(0);
-    }
-
-    // 프레임워크 특화 패턴(Spring 어노테이션, JPA 사용 등)을 분석하여 벡터화
-    console.log('  ⚙️ 프레임워크 임베딩 생성...');
     let frameworkEmbedding = [];
-    try {
-      frameworkEmbedding = await this.embeddingGenerator.embedFrameworkUsage(src);
-      if (!Array.isArray(frameworkEmbedding)) throw new Error('invalid frameworkEmbedding');
-    } catch (e) {
-      console.warn('프레임워크 임베딩 실패, 기본 벡터 사용:', e.message);
-      frameworkEmbedding = new Array(480).fill(0);
-    }
-
-    // 비즈니스 로직 컨텍스트(도메인 용어, 비즈니스 규칙 등)를 분석하여 벡터화
-    console.log('  🏢 비즈니스 컨텍스트 임베딩 생성...');
     let contextEmbedding = [];
+    
     try {
-      contextEmbedding = await this.embeddingGenerator.embedBusinessContext(src);
-      if (!Array.isArray(contextEmbedding)) throw new Error('invalid contextEmbedding');
+      console.log('  🔧 구문적 임베딩 (128차원)...');
+      syntacticEmbedding = await this.embeddingGenerator.embedAstStructure(src);
+      if (!Array.isArray(syntacticEmbedding) || syntacticEmbedding.length !== 128) {
+        throw new Error(`Invalid syntactic embedding: expected 128, got ${syntacticEmbedding?.length}`);
+      }
+      console.log('     ✅ 구문적 임베딩 완료');
     } catch (e) {
-      console.warn('컨텍스트 임베딩 실패, 기본 벡터 사용:', e.message);
-      contextEmbedding = new Array(480).fill(0);
+      console.warn('     ⚠️ 구문적 임베딩 실패, 기본 벡터 사용:', e.message);
+      syntacticEmbedding = new Array(128).fill(0);
     }
 
-    // 4가지 임베딩 벡터를 가중치를 적용하여 하나의 통합 벡터로 결합
-    console.log('  🔗 임베딩 결합...');
+    try {
+      console.log('  🧠 의미론적 임베딩 (256차원)...');
+      semanticEmbedding = await this.embeddingGenerator.embedCodeSemantics(src);
+      if (!Array.isArray(semanticEmbedding) || semanticEmbedding.length !== 256) {
+        throw new Error(`Invalid semantic embedding: expected 256, got ${semanticEmbedding?.length}`);
+      }
+      console.log('     ✅ 의미론적 임베딩 완료');
+    } catch (e) {
+      console.warn('     ⚠️ 의미론적 임베딩 실패, 기본 벡터 사용:', e.message);
+      semanticEmbedding = new Array(256).fill(0);
+    }
+
+    try {
+      console.log('  ⚙️ 프레임워크 임베딩 (64차원)...');
+      frameworkEmbedding = await this.embeddingGenerator.embedFrameworkUsage(src);
+      if (!Array.isArray(frameworkEmbedding) || frameworkEmbedding.length !== 64) {
+        throw new Error(`Invalid framework embedding: expected 64, got ${frameworkEmbedding?.length}`);
+      }
+      console.log('     ✅ 프레임워크 임베딩 완료');
+    } catch (e) {
+      console.warn('     ⚠️ 프레임워크 임베딩 실패, 기본 벡터 사용:', e.message);
+      frameworkEmbedding = new Array(64).fill(0);
+    }
+
+    try {
+      console.log('  🏢 비즈니스 컨텍스트 임베딩 (32차원)...');
+      contextEmbedding = await this.embeddingGenerator.embedBusinessContext(src);
+      if (!Array.isArray(contextEmbedding) || contextEmbedding.length !== 32) {
+        throw new Error(`Invalid context embedding: expected 32, got ${contextEmbedding?.length}`);
+      }
+      console.log('     ✅ 비즈니스 임베딩 완료');
+    } catch (e) {
+      console.warn('     ⚠️ 컨텍스트 임베딩 실패, 기본 벡터 사용:', e.message);
+      contextEmbedding = new Array(32).fill(0);
+    }
+
+    console.log('  🔗 임베딩 결합 (480차원)...');
     let combinedEmbedding = [];
     try {
       combinedEmbedding = this.embeddingGenerator.combineEmbeddings({
@@ -187,13 +199,34 @@ export class PatternDatasetGenerator {
         semantic: semanticEmbedding,
         framework: frameworkEmbedding,
         context: contextEmbedding
-      }) || [];
+      });
+      
+      if (!Array.isArray(combinedEmbedding) || combinedEmbedding.length !== 480) {
+        throw new Error(`Invalid combined embedding: expected 480, got ${combinedEmbedding?.length}`);
+      }
+      
+      // NaN, Infinity 체크
+      if (combinedEmbedding.some(v => !isFinite(v))) {
+        throw new Error('Combined embedding contains NaN or Infinity');
+      }
+      
+      console.log(`     ✅ 결합 완료: 480차원 (${syntacticEmbedding.length}+${semanticEmbedding.length}+${frameworkEmbedding.length}+${contextEmbedding.length})`);
+      console.log(`     벡터 범위: [${Math.min(...combinedEmbedding).toFixed(4)}, ${Math.max(...combinedEmbedding).toFixed(4)}]`);
+      
+      // 0이 아닌 값 비율 확인
+      const nonZeroCount = combinedEmbedding.filter(v => v !== 0).length;
+      const nonZeroRatio = (nonZeroCount / 480 * 100).toFixed(1);
+      console.log(`     0이 아닌 값: ${nonZeroCount}/480 (${nonZeroRatio}%)`);
+      
+      if (nonZeroCount === 0) {
+        console.warn('     ⚠️ 경고: 모든 값이 0인 벡터 생성됨 (더미 벡터)');
+      }
+      
     } catch (e) {
-      console.warn('임베딩 결합 실패, 기본 벡터 사용:', e.message);
+      console.warn('     ⚠️ 임베딩 결합 실패, 기본 벡터 사용:', e.message);
       combinedEmbedding = new Array(480).fill(0);
     }
 
-    // AST 분석을 통해 순환복잡도, 최대 깊이, 리소스 누수 위험 등의 메타데이터 추출
     console.log('  🌳 AST 분석 정보 추출...');
     const astAnalysis = await this.extractASTAnalysis(src);
 
@@ -208,7 +241,20 @@ export class PatternDatasetGenerator {
       embedding_metadata: {
         embedding_version: 'v1.0',
         created_timestamp: new Date().toISOString(),
-        model_version: 'CustomEmbedding-1.0.0'
+        model_version: 'CustomEmbedding-1.0.0',
+        dimensions: {
+          syntactic: syntacticEmbedding.length,
+          semantic: semanticEmbedding.length,
+          framework: frameworkEmbedding.length,
+          context: contextEmbedding.length,
+          combined: combinedEmbedding.length
+        },
+        quality_metrics: {
+          non_zero_ratio: combinedEmbedding.filter(v => v !== 0).length / 480,
+          vector_magnitude: Math.sqrt(combinedEmbedding.reduce((sum, v) => sum + v * v, 0)),
+          min_value: Math.min(...combinedEmbedding),
+          max_value: Math.max(...combinedEmbedding)
+        }
       },
       ast_analysis: astAnalysis
     };
@@ -235,7 +281,7 @@ export class PatternDatasetGenerator {
         };
       }
     } catch (error) {
-      console.warn('AST 분석 오류:', error.message);
+      console.warn('     ⚠️ AST 분석 오류:', error.message);
     }
     // AST 파싱 실패 시 빈 기본값 반환
     return {
@@ -305,6 +351,8 @@ export class PatternDatasetGenerator {
     // 데이터 완성도를 기반으로 품질 점수 재계산 (0.0 ~ 1.0)
     const qualityScore = this.calculateFinalQualityScore(dataset);
     dataset.validation_info.quality_score = qualityScore;
+
+    console.log(`  📊 최종 품질 점수: ${qualityScore.toFixed(2)}`);
 
     return dataset;
   }
@@ -423,7 +471,15 @@ export class PatternDatasetGenerator {
       'anti_pattern': { code_template: '', pattern_signature: { semantic_signature: '', regex_patterns: [] } },
       'recommended_pattern': { code_template: '', pattern_name: '', implementation_guide: { best_practices: [] } },
       'impact_analysis': { production_impact: { failure_scenarios: [] }, historical_data: { occurrence_frequency: 1 } },
-      'embeddings': { combined_embedding: new Array(480).fill(0), component_embeddings: {} }
+      'embeddings': { 
+        combined_embedding: new Array(480).fill(0), 
+        component_embeddings: {
+          syntactic_embedding: new Array(128).fill(0),
+          semantic_embedding: new Array(256).fill(0),
+          framework_embedding: new Array(64).fill(0),
+          context_embedding: new Array(32).fill(0)
+        }
+      }
     };
 
     return defaults[fieldName] || {};

@@ -3,8 +3,10 @@ old
 node_modules
 diagram
 examples
-input
-output
+issue_raw
+issue_pattern
+rules
+reports
 
 # environment
 .env

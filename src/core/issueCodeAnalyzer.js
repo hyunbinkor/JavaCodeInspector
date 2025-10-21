@@ -58,6 +58,62 @@ export class issueCodeAnalyzer {
     // AST 파싱으로 코드의 구조적 정보 추출
     const astResult = this.astParser.parseJavaCode(sourceCode);
 
+    // similarPatterns가 이미 제공되었는지 확인
+    if (!similarPatterns || similarPatterns.length === 0) {
+      console.log('  ⚠️ 유사 패턴이 제공되지 않음, VectorDB 검색 시도...');
+      
+      try {
+        // 검색용 임베딩 생성
+        const CodeEmbeddingGenerator = (await import('../embeddings/codeEmbedding.js')).CodeEmbeddingGenerator;
+        const embeddingGenerator = new CodeEmbeddingGenerator();
+        
+        const searchEmbeddings = await embeddingGenerator.generateEmbeddings(sourceCode);
+        const queryVector = searchEmbeddings.combined_embedding;
+        
+        // 벡터 검증
+        if (!queryVector || queryVector.length !== 480) {
+          console.error(`❌ 검색 벡터 차원 오류: ${queryVector?.length} !== 480`);
+          similarPatterns = [];
+        } else {
+          console.log(`  🔍 검색 벡터 생성 완료: 480차원`);
+          console.log(`     범위: [${Math.min(...queryVector).toFixed(4)}, ${Math.max(...queryVector).toFixed(4)}]`);
+          
+          // 0이 아닌 값 비율 확인
+          const nonZeroCount = queryVector.filter(v => v !== 0).length;
+          const nonZeroRatio = (nonZeroCount / 480 * 100).toFixed(1);
+          console.log(`     0이 아닌 값: ${nonZeroCount}/480 (${nonZeroRatio}%)`);
+          
+          if (nonZeroCount === 0) {
+            console.warn('     ⚠️ 모든 값이 0인 벡터 - 검색 결과가 없을 수 있음');
+          }
+          
+          // VectorDB에서 유사 패턴 검색
+          const VectorClient = (await import('../clients/vectorClient.js')).VectorClient;
+          const vectorClient = new VectorClient();
+          
+          similarPatterns = await vectorClient.searchSimilarPatterns(
+            queryVector,
+            10,  // limit
+            0.7  // threshold
+          );
+          
+          console.log(`  ✅ VectorDB 검색 완료: ${similarPatterns.length}개 패턴 발견`);
+          
+          if (similarPatterns.length > 0) {
+            console.log(`     최고 유사도: ${similarPatterns[0].score?.toFixed(4) || 'N/A'}`);
+            console.log(`     카테고리 분포:`, 
+              [...new Set(similarPatterns.map(p => p.category))].join(', '));
+          }
+        }
+      } catch (error) {
+        console.error('  ❌ VectorDB 검색 실패:', error.message);
+        if (error.stack) {
+          console.error('     스택:', error.stack.split('\n').slice(0, 3).join('\n'));
+        }
+        similarPatterns = [];
+      }
+    }
+
     // 1단계: VectorDB에서 안전한 패턴을 동적으로 확인
     const safePracticesFound = await this.dynamicAnalyzer.checkForSafePracticesDynamic(sourceCode);
     console.log(`  📊 발견된 안전한 패턴: ${safePracticesFound.length}개`);
@@ -66,6 +122,11 @@ export class issueCodeAnalyzer {
     const patternClassification = this.dynamicAnalyzer.classifySimilarPatterns(similarPatterns);
     console.log(`  ✅ 안전한 패턴: ${patternClassification.safePatterns.length}개`);
     console.log(`  ⚠️ 문제 패턴: ${patternClassification.antiPatterns.length}개`);
+
+    if (patternClassification.antiPatterns.length > 0) {
+      console.log(`     문제 패턴 카테고리:`, 
+        [...new Set(patternClassification.antiPatterns.map(p => p.category))].join(', '));
+    }
 
     // 3단계: 각 문제 패턴에 대해 실제 코드에서 이슈 탐지
     for (const pattern of patternClassification.antiPatterns) {
@@ -78,6 +139,8 @@ export class issueCodeAnalyzer {
 
       // VectorDB 패턴의 semantic signature를 사용하여 코드에서 문제 위치 탐지
       const matches = await this.dynamicAnalyzer.findIssuesUsingDynamicPatterns(sourceCode, [pattern]);
+
+      console.log(`  🔎 ${pattern.category} 패턴 매칭: ${matches.length}개 후보 발견`);
 
       for (const match of matches) {
         // 매칭된 위치가 실제로 문제인지 재검증 (주석, 선언문 등 제외)
@@ -109,11 +172,13 @@ export class issueCodeAnalyzer {
         };
 
         detectedIssues.push(issue);
+        console.log(`  ✅ 이슈 추가: ${issue.title} (라인 ${issue.location.startLine})`);
       }
     }
 
     // 4단계: 동일 라인의 중복 이슈 제거
     const uniqueIssues = this.deduplicateIssuesStrict(detectedIssues);
+    console.log(`  🔄 중복 제거: ${detectedIssues.length} -> ${uniqueIssues.length}개`);
     
     // 5단계: 심각도, 신뢰도, 카테고리 우선순위로 정렬
     const sortedIssues = this.prioritizeIssues(uniqueIssues);
@@ -122,6 +187,10 @@ export class issueCodeAnalyzer {
     const recommendations = this.generateCategoryRecommendations(patternClassification.antiPatterns, safePracticesFound);
 
     console.log(`✅ 분석 완료: ${sortedIssues.length}개의 실제 문제 발견`);
+
+    if (sortedIssues.length > 0) {
+      console.log(`   심각도 분포:`, this.getSeverityDistribution(sortedIssues));
+    }
 
     return {
       detectedIssues: sortedIssues,
@@ -311,7 +380,7 @@ ${categoryRecommendation.codeExample}
         : [`${issue.category} 카테고리의 모범 사례 적용`, '코드 리뷰 및 개선 필요'],
       fixedCode: categoryRecommendation.codeExample || `// ${issue.title} 문제 수정 필요\n${issue.codeSnippet}`,
       explanation: `${issue.category} 카테고리의 ${issue.title} 문제입니다. ${categoryRecommendation.suggestions.join(', ')}를 적용하여 수정하세요.`,
-      confidence: 0.6,
+      confidence: 0.7,
       patternBasedSuggestions: categoryRecommendation.suggestions,
       frameworkNotes: categoryRecommendation.frameworkNotes
     };
@@ -434,6 +503,17 @@ ${categoryRecommendation.codeExample}
     const end = Math.min(codeLines.length, endLine + 1);
 
     return codeLines.slice(start, end).join('\n');
+  }
+
+  /**
+   * 심각도 분포 계산 (디버깅용)
+   */
+  getSeverityDistribution(issues) {
+    const distribution = {};
+    for (const issue of issues) {
+      distribution[issue.severity] = (distribution[issue.severity] || 0) + 1;
+    }
+    return distribution;
   }
 
   /**

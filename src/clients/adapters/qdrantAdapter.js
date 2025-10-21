@@ -152,23 +152,36 @@ export class QdrantAdapter {
     try {
       const id = uuidv4();
       
-      // 벡터 준비 및 차원 검증
-      let vector = dataset.embeddings?.combined_embedding || this.createDummyVector();
+      // 벡터 준비
+      let vector = dataset.embeddings?.combined_embedding;
       
-      console.log(`📊 벡터 정보: 원본 차원=${vector.length}, 목표 차원=${this.vectorDimensions}`);
+      // 벡터 존재 여부 확인
+      if (!vector || !Array.isArray(vector)) {
+        console.warn(`⚠️ 벡터가 없어 더미 벡터 생성: ${dataset.issue_record_id}`);
+        vector = this.createDummyVector();
+      }
       
-      // 벡터 차원이 설정과 다르면 조정
+      // 벡터 차원 검증 (조정하지 않음)
       if (vector.length !== this.vectorDimensions) {
-        console.warn(`⚠️ 벡터 차원 불일치: ${vector.length} -> ${this.vectorDimensions} (자동 조정)`);
-        vector = this.adjustVectorDimension(vector, this.vectorDimensions);
-        console.log(`✅ 벡터 차원 조정 완료: ${vector.length}`);
+        console.error(`❌ 벡터 차원 불일치: ${vector.length} !== ${this.vectorDimensions}`);
+        console.error(`   패턴 ID: ${dataset.issue_record_id}`);
+        console.error(`   ⚠️ 임베딩 생성 로직을 확인하세요`);
+        
+        // 에러 대신 경고만 표시하고 더미 벡터 사용
+        console.warn(`   더미 벡터로 대체하여 저장 진행`);
+        vector = this.createDummyVector();
       }
-
-      // 벡터가 유효한 숫자 배열인지 확인
-      if (!Array.isArray(vector) || vector.some(v => typeof v !== 'number' || isNaN(v))) {
-        console.error('❌ 잘못된 벡터 형식:', vector.slice(0, 5));
-        throw new Error('Invalid vector format');
+      
+      // 벡터 유효성 검증
+      if (!this.validateVector(vector)) {
+        console.error(`❌ 벡터에 유효하지 않은 값 포함: ${dataset.issue_record_id}`);
+        throw new Error('Vector contains NaN, Infinity, or non-numeric values');
       }
+      
+      // 벡터 정규화 (Cosine 유사도는 정규화된 벡터에서 더 잘 작동)
+      vector = this.normalizeVector(vector);
+      
+      console.log(`📊 벡터 정보: 차원=${vector.length}, 범위=[${Math.min(...vector).toFixed(4)}, ${Math.max(...vector).toFixed(4)}]`);
 
       // Payload 준비 - 모든 배열을 JSON 문자열로 변환
       const payload = {
@@ -225,28 +238,66 @@ export class QdrantAdapter {
   }
 
   /**
-   * 벡터 차원을 목표 차원에 맞게 조정
+   * 벡터 유효성 검증
    */
-  adjustVectorDimension(vector, targetDim) {
-    if (vector.length === targetDim) {
-      return vector;
-    } else if (vector.length > targetDim) {
-      // 차원이 크면 자르기
-      return vector.slice(0, targetDim);
-    } else {
-      // 차원이 작으면 0으로 패딩
-      return [...vector, ...new Array(targetDim - vector.length).fill(0)];
+  validateVector(vector) {
+    if (!Array.isArray(vector) || vector.length === 0) {
+      return false;
     }
+    
+    return vector.every(v => {
+      return typeof v === 'number' && 
+             !isNaN(v) && 
+             isFinite(v);
+    });
+  }
+
+  /**
+   * 벡터 정규화 (L2 normalization)
+   * Cosine 유사도는 정규화된 벡터에서 내적으로 계산 가능
+   */
+  normalizeVector(vector) {
+    const magnitude = Math.sqrt(
+      vector.reduce((sum, val) => sum + val * val, 0)
+    );
+    
+    // 0 벡터 방지
+    if (magnitude === 0 || !isFinite(magnitude)) {
+      console.warn('⚠️ 0 벡터 또는 무한대 벡터 감지, 정규화 스킵');
+      return vector;
+    }
+    
+    return vector.map(val => val / magnitude);
   }
 
   async searchSimilarPatterns(queryVector, limit = 5, threshold = 0.7) {
     try {
+      // 검색 벡터 검증
+      if (!this.validateVector(queryVector)) {
+        console.error('❌ 검색 벡터가 유효하지 않음');
+        return [];
+      }
+      
+      // 검색 벡터 정규화 (저장 시와 동일하게)
+      const normalizedQuery = this.normalizeVector(queryVector);
+      
+      console.log(`🔍 검색 시작: 차원=${normalizedQuery.length}, threshold=${threshold}, limit=${limit}`);
+      console.log(`🔍 벡터 샘플: [${normalizedQuery.slice(0, 5).map(v => v.toFixed(4)).join(', ')}...]`);
+      
       const searchResult = await this.client.search(this.codePatternCollectionName, {
-        vector: queryVector,
+        vector: normalizedQuery,
         limit,
         score_threshold: threshold,
-        with_payload: true
+        with_payload: true,
+        with_vector: false  // 결과에 벡터 포함 안 함 (성능 향상)
       });
+
+      console.log(`✅ 검색 완료: ${searchResult.length}개 결과 발견`);
+      
+      if (searchResult.length > 0) {
+        console.log(`   최고 점수: ${searchResult[0].score.toFixed(4)}`);
+        console.log(`   최저 점수: ${searchResult[searchResult.length - 1].score.toFixed(4)}`);
+      }
 
       return searchResult.map(result => ({
         id: result.payload.issueRecordId,
@@ -262,7 +313,10 @@ export class QdrantAdapter {
         fullData: JSON.parse(result.payload.patternData || '{}')
       }));
     } catch (error) {
-      console.error('유사 패턴 검색 오류:', error.message);
+      console.error('❌ 유사 패턴 검색 오류:', error.message);
+      if (error.data) {
+        console.error('   상세:', JSON.stringify(error.data, null, 2));
+      }
       return [];
     }
   }
@@ -303,9 +357,17 @@ export class QdrantAdapter {
       // 벡터 준비 및 차원 검증
       let vector = guideline.embedding || this.createDummyVector();
       if (vector.length !== this.vectorDimensions) {
-        console.warn(`⚠️ 벡터 차원 불일치: ${vector.length} -> ${this.vectorDimensions} (자동 조정)`);
-        vector = this.adjustVectorDimension(vector, this.vectorDimensions);
+        console.warn(`⚠️ 벡터 차원 불일치: ${vector.length} -> ${this.vectorDimensions} (더미 벡터 사용)`);
+        vector = this.createDummyVector();
       }
+      
+      // 벡터 검증 및 정규화
+      if (!this.validateVector(vector)) {
+        console.warn(`⚠️ 가이드라인 벡터 유효하지 않음, 더미 벡터 사용`);
+        vector = this.createDummyVector();
+      }
+      
+      vector = this.normalizeVector(vector);
 
       const point = {
         id,
@@ -590,5 +652,52 @@ export class QdrantAdapter {
   createDummyVector() {
     // 벡터가 없을 경우 더미 벡터 생성 (모든 값이 0)
     return new Array(this.vectorDimensions).fill(0);
+  }
+
+  /**
+   * 두 벡터의 코사인 유사도 계산 (디버깅용)
+   */
+  calculateCosineSimilarity(vec1, vec2) {
+    if (vec1.length !== vec2.length) {
+      throw new Error('Vector dimensions must match');
+    }
+    
+    let dotProduct = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+    
+    for (let i = 0; i < vec1.length; i++) {
+      dotProduct += vec1[i] * vec2[i];
+      norm1 += vec1[i] * vec1[i];
+      norm2 += vec2[i] * vec2[i];
+    }
+    
+    const magnitude = Math.sqrt(norm1) * Math.sqrt(norm2);
+    
+    if (magnitude === 0) return 0;
+    
+    return dotProduct / magnitude;
+  }
+
+  /**
+   * 벡터 통계 출력 (디버깅용)
+   */
+  printVectorStats(vector, label = 'Vector') {
+    const stats = {
+      dimension: vector.length,
+      min: Math.min(...vector),
+      max: Math.max(...vector),
+      mean: vector.reduce((a, b) => a + b, 0) / vector.length,
+      nonZeroCount: vector.filter(v => v !== 0).length,
+      zeroRatio: vector.filter(v => v === 0).length / vector.length
+    };
+    
+    console.log(`📊 ${label} 통계:`);
+    console.log(`   차원: ${stats.dimension}`);
+    console.log(`   범위: [${stats.min.toFixed(4)}, ${stats.max.toFixed(4)}]`);
+    console.log(`   평균: ${stats.mean.toFixed(4)}`);
+    console.log(`   0이 아닌 값: ${stats.nonZeroCount} (${((1-stats.zeroRatio)*100).toFixed(1)}%)`);
+    
+    return stats;
   }
 }
