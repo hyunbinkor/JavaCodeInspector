@@ -1,21 +1,19 @@
-/**
- * 가이드라인 전용 검사 명령어
- */
-
-import fs from 'fs/promises';
 import path from 'path';
 import { UnifiedJavaCodeChecker } from '../core/unifiedCodeChecker.js';
 import { LLMService } from '../clients/llmService.js';
 import { deduplicateIssuesByLineAndRule, categorizeIssues } from '../utils/issueUtils.js';
 import { generateGuidelineFixSuggestion, generateFullFixedCodeForGuidelines } from '../services/guidelineFixService.js';
+import { loadData } from '../utils/fileUtils.js';
 
 /**
  * 가이드라인 전용 검사 수행
- * 1. AST 파싱
- * 2. 정적 규칙 검사 및 선택적 LLM 맥락 검사
- * 3. 중복 이슈 제거
- * 4. --fix 옵션 시 각 위반사항에 대한 수정 제안 및 전체 수정 코드 생성
- * 5. 결과를 JSON으로 저장
+ * 
+ * 내부 흐름:
+ * 1. DevelopmentGuidelineChecker로 가이드라인 JSON 로드
+ * 2. 각 규칙에 대해 코드 검증 수행
+ * 3. (옵션) vLLM 기반 맥락적 검사 추가 실행
+ * 4. (옵션) 가이드라인 기반 코드 수정안 생성
+ * 5. 검사 결과 반환
  */
 export async function performGuidelineOnlyCheck(options) {
   if (!options.code) {
@@ -26,7 +24,7 @@ export async function performGuidelineOnlyCheck(options) {
   console.log('=== 개발가이드 규칙 검사 ===');
   console.log(`대상 파일: ${options.code}`);
 
-  const sourceCode = await fs.readFile(options.code, 'utf-8');
+  const sourceCode = await loadData(options.code, 'sampleCode');
   const fileName = path.basename(options.code);
 
   const unifiedChecker = new UnifiedJavaCodeChecker();
@@ -193,14 +191,14 @@ export async function performGuidelineOnlyCheck(options) {
       };
     }
 
-    await fs.writeFile(options.output, JSON.stringify(reportData, null, 2));
+    await saveJsonData(reportData, options.output, '');
     console.log(`\n결과 저장: ${options.output}`);
 
     // 수정된 전체 코드를 별도 파일로 저장
     if (options.fix && fullFixedCode) {
-      const fixedCodePath = options.output.replace('.json', '_fixed.java');
-      await fs.writeFile(fixedCodePath, fullFixedCode);
-      console.log(`수정된 코드 저장: ${fixedCodePath}`);
+      const fixedCodeName = options.output.replace('.json', '_fixed.java');
+      await saveJsonData(fullFixedCode, fixedCodeName, 'fixedCode');
+      console.log(`수정된 코드 저장: ${fixedCodeName}`);
     }
   }
 

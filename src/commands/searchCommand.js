@@ -1,21 +1,19 @@
-/**
- * VectorDB 기반 유사 패턴 검색 및 분석 명령어
- */
-
-import fs from 'fs/promises';
 import path from 'path';
 import { issueCodeAnalyzer as IssueCodeAnalyzer } from '../core/issueCodeAnalyzer.js';
 import { PatternDatasetGenerator } from '../core/patternGenerator.js';
 import { VectorClient } from '../clients/vectorClient.js';
 import { addLineNumbers } from '../utils/codeUtils.js';
+import { loadData, saveJsonData } from '../utils/fileUtils.js';
 
 /**
  * VectorDB 기반 유사 패턴 검색 및 동적 분석
- * 1. 코드를 임베딩하여 VectorDB에서 유사 패턴 검색
- * 2. issueCodeAnalyzer로 안전/문제 패턴 분류
- * 3. 실제 코드에서 문제 패턴 탐지
- * 4. --fix 옵션 시 패턴 기반 수정 제안 생성
- * 5. 분석 결과 JSON으로 저장
+ * 
+ * 내부 흐름:
+ * 1. CodeEmbeddingGenerator로 입력 코드 벡터 생성
+ * 2. Qdrant VectorDB에서 유사도 기반 패턴 검색
+ * 3. IssueCodeAnalyzer로 검색된 패턴 분석
+ * 4. (옵션) vLLM 기반 수정안 생성
+ * 5. 분석 결과 및 유사 패턴 목록 반환
  */
 export async function searchAndAnalyzePatterns(options) {
   if (!options.code) {
@@ -26,7 +24,7 @@ export async function searchAndAnalyzePatterns(options) {
   console.log('코드 패턴 분석 시작');
   console.log(`코드 파일: ${options.code}`);
 
-  const sourceCode = await fs.readFile(options.code, 'utf-8');
+  const sourceCode = await loadData(options.code, 'sampleCode');
   const fileName = path.basename(options.code);
 
   const analyzer = new IssueCodeAnalyzer();
@@ -129,7 +127,7 @@ export async function searchAndAnalyzePatterns(options) {
         analysisMetadata: analysisResults.analysisMetadata
       };
 
-      await fs.writeFile(options.output, JSON.stringify(analysisReport, null, 2), 'utf-8');
+      await saveJsonData(analysisReport, options.output, 'report');
       console.log(`\n분석 결과가 저장되었습니다: ${options.output}`);
     }
 
@@ -243,7 +241,7 @@ export async function searchAndAnalyzePatterns(options) {
       summary: `VectorDB의 동적 패턴 분석을 통해 ${analysisResults.detectedIssues.length}개의 문제가 발견되었습니다. ${classification.safePatterns.length}개의 안전한 패턴과 ${classification.antiPatterns.length}개의 문제 패턴을 참고하여 분석했습니다.`
     };
 
-    await fs.writeFile(options.output, JSON.stringify(analysisReport, null, 2), 'utf-8');
+    await saveJsonData(analysisReport, options.output, report);
     console.log(`\nVectorDB 패턴 기반 분석 결과가 저장되었습니다: ${options.output}`);
   }
 

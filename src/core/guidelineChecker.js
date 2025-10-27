@@ -1,25 +1,79 @@
-import { VectorClient } from '../clients/vectorClient.js';
-import { LLMService } from '../clients/llmService.js';
-
 /**
- * 개발가이드 전용 검사기
+ * 개발가이드 전용 검사기 (Layer1: DevelopmentGuidelineChecker)
+ * 
+ * 금융권 Java 코드 정적 분석 시스템의 Layer1 컴포넌트
+ * - 개발 가이드라인 규칙 기반 코드 검증
+ * - VectorDB에서 규칙 로드 및 적용
+ * - 이중 검사 메커니즘 (정적 + 컨텍스트)
  * 
  * 이중 검사 메커니즘:
+ * 
  * 1. 정적 규칙 검사 (Static Rules)
  *    - 정규표현식 기반 패턴 매칭
  *    - AST 기반 구조 분석
  *    - 빠른 검증 속도, 명확한 규칙 적용
+ *    - 예: 들여쓰기, 변수명 규칙, 라인 길이 등
  * 
  * 2. 컨텍스트 규칙 검사 (Contextual Rules)
- *    - LLM 기반 의미론적 분석
+ *    - vLLM 기반 의미론적 분석
  *    - 비즈니스 로직, 아키텍처 패턴 등 복잡한 규칙
  *    - 코드 맥락을 이해한 심층 검증
+ *    - 예: LData 명명 규칙, 로직 분리, 비즈니스 패턴
  * 
  * 규칙 소스:
- * - VectorDB에서 가이드라인 규칙 로드
- * - 로드 실패 시 기본 규칙(하드코딩) 사용
+ * - Primary: VectorDB (Qdrant)에서 가이드라인 규칙 로드
+ * - Fallback: 로드 실패 시 기본 규칙(하드코딩) 사용
+ * 
+ * 호출 체인:
+ * 1. initialize() → loadGuidelineRules() → VectorClient.searchGuidelines()
+ * 2. checkCode() → checkStaticRules() / checkContextualRules()
+ * 3. checkContextualRules() → LLMService.generateCompletion()
+ * 
+ * @module DevelopmentGuidelineChecker
+ * @requires VectorClient - VectorDB 연동 (가이드라인 규칙 로드)
+ * @requires LLMService - vLLM 연동 (컨텍스트 검사)
+ * 
+ * # TODO: Node.js → Python 변환 (FastAPI + Pydantic)
+ * # TODO: loadGuidelineRules() - Qdrant Python 클라이언트로 전환
+ * # TODO: checkContextualRules() - vLLM Python SDK 적용
+ * # NOTE: 금융권 보안: 규칙 ID 검증, SQL 인젝션 방지
+ * # PERFORMANCE: 규칙 캐싱으로 반복 로드 방지 (Redis/메모리)
+ */
+import { VectorClient } from '../clients/vectorClient.js';
+import { LLMService } from '../clients/llmService.js';
+/**
+ * 개발가이드 전용 검사기 클래스 (Layer1 Component)
+ * 
+ * 내부 구조:
+ * - staticRules: Map<ruleId, rule> - 정적 규칙 저장소
+ * - contextualRules: Map<ruleId, rule> - 컨텍스트 규칙 저장소
+ * - vectorClient: VectorClient 인스턴스
+ * - llmService: LLMService 인스턴스
+ * 
+ * 생명주기:
+ * 1. new DevelopmentGuidelineChecker()
+ * 2. await initialize()
+ * 3. await checkCode() - 반복 호출 가능
+ * 
+ * @class
+ * 
+ * # TODO: Python 클래스로 변환 시 타입 힌팅 추가
+ * # PERFORMANCE: 규칙 캐싱 및 인덱싱으로 검색 최적화
  */
 export class DevelopmentGuidelineChecker {
+  /**
+   * 생성자: 규칙 저장소 및 클라이언트 초기화
+   * 
+   * 초기화 항목:
+   * 1. staticRules Map 생성 (정규식/AST 기반 빠른 검사용)
+   * 2. contextualRules Map 생성 (LLM 기반 의미론적 검사용)
+   * 3. VectorClient 인스턴스 생성 (가이드라인 로드)
+   * 4. LLMService 인스턴스 생성 (컨텍스트 분석)
+   * 
+   * @constructor
+   * 
+   * # NOTE: 생성자는 동기적, 실제 초기화는 initialize() 호출 필요
+   */
   constructor() {
     // 정적 규칙 저장소 - regex/AST 기반 빠른 검사
     this.staticRules = new Map();
@@ -35,10 +89,24 @@ export class DevelopmentGuidelineChecker {
   }
 
   /**
-   * 초기화 프로세스
-   * 1. VectorDB에서 가이드라인 규칙 로드
-   * 2. 하드코딩된 컨텍스트 규칙 로드
-   * 3. 로드 실패 시 기본 규칙으로 폴백
+   * 개발가이드 룰 초기화 프로세스
+   * 
+   * 내부 흐름:
+   * 1. loadGuidelineRules() 호출 → VectorClient.searchGuidelines()
+   * 2. VectorDB에서 가이드라인 규칙 로드
+   * 3. checkType에 따라 staticRules/contextualRules에 분류 저장
+   * 4. loadContextualGuidelines() 호출 → 하드코딩된 컨텍스트 규칙 추가
+   * 5. 로드 실패 시 initializeDefaultRules()로 폴백
+   * 
+   * @async
+   * @returns {Promise<void>}
+   * 
+   * @example
+   * const checker = new DevelopmentGuidelineChecker();
+   * await checker.initialize();
+   * 
+   * # TODO: Python 변환 시 async/await → asyncio로 변경
+   * # PERFORMANCE: 규칙 로드 시간 측정 및 캐싱 적용
    */
   async initialize() {
     console.log('📋 개발가이드 룰 로딩 중...');

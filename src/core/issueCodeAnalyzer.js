@@ -1,13 +1,94 @@
+/**
+ * VectorDB 동적 패턴 기반 코드 분석기 (IssueCodeAnalyzer)
+ * 
+ * 금융권 Java 코드의 보안 취약점, 리소스 관리, 성능 이슈, 예외 처리 패턴 분석
+ * Layer2 컴포넌트 - VectorDB 패턴 검색 및 분석
+ * 
+ * 분석 프로세스:
+ * 1. analyzeCodeIssues() → 메인 분석 엔트리포인트
+ * 2. JavaASTParser.parseJavaCode() → AST 파싱으로 코드 구조 분석
+ * 3. CodeEmbeddingGenerator.generateEmbeddings() → 코드 벡터화
+ * 4. VectorClient.searchSimilarPatterns() → Qdrant VectorDB 검색
+ * 5. DynamicSafePatternAnalyzer.checkForSafePracticesDynamic() → 안전한 패턴 확인
+ * 6. classifySimilarPatterns() → 안전/위험 패턴 분류
+ * 7. findIssuesUsingDynamicPatterns() → 실제 이슈 위치 탐지
+ * 8. validateIssueMatch() → 거짓 양성 필터링
+ * 9. deduplicateIssuesStrict() → 중복 제거
+ * 10. prioritizeIssues() → 심각도별 정렬
+ * 11. generateCategoryRecommendations() → 카테고리별 권장사항 생성
+ * 
+ * 분석 카테고리:
+ * - resource_management: 리소스 누수 (Connection, ResultSet, Stream 등)
+ * - security: SQL 인젝션, XSS, 인증/인가 취약점
+ * - performance: N+1 쿼리, 불필요한 객체 생성, 비효율적 루프
+ * - exception_handling: 빈 catch 블록, 예외 무시, 부적절한 예외 처리
+ * - code_smell: 긴 메서드, 중복 코드, 매직 넘버
+ * 
+ * VectorDB 패턴 구조:
+ * {
+ *   "category": "resource_management",
+ *   "anti_pattern": {
+ *     "pattern_signature": {
+ *       "semantic_signature": [...키워드 배열...],
+ *       "structure_indicators": [...구조 패턴...]
+ *     }
+ *   },
+ *   "safe_pattern": {
+ *     "description": "try-with-resources 사용",
+ *     "code_example": "..."
+ *   }
+ * }
+ * 
+ * @module IssueCodeAnalyzer
+ * @requires JavaASTParser - Java AST 파싱
+ * @requires LLMService - vLLM 기반 코드 수정 생성
+ * @requires DynamicSafePatternAnalyzer - VectorDB 패턴 분석
+ * @requires CodeEmbeddingGenerator - 코드 임베딩 생성
+ * @requires VectorClient - Qdrant VectorDB 연동
+ * 
+ * # TODO: Node.js → Python 변환 (FastAPI + Pydantic)
+ * # TODO: JavaASTParser → javalang 라이브러리
+ * # TODO: VectorClient → Qdrant Python SDK
+ * # TODO: 비동기 처리 → asyncio.gather() 병렬 실행
+ * # NOTE: 거짓 양성 최소화를 위한 다단계 검증 필수
+ * # PERFORMANCE: 벡터 검색 캐싱으로 중복 임베딩 생성 방지
+ * # PERFORMANCE: AST 파싱 결과 캐싱 (동일 파일 반복 검사 시)
+ */
 import { JavaASTParser } from '../ast/javaAstParser.js';
 import { LLMService } from '../clients/llmService.js';
 import { DynamicSafePatternAnalyzer } from './dynamicSafePatternAnalyzer.js';
 import { config } from '../config.js';
-
 /**
- * VectorDB의 동적 패턴을 활용한 코드 분석기
- * Java 코드의 보안 취약점, 리소스 관리 문제, 성능 이슈, 예외 처리 패턴을 분석
+ * VectorDB 동적 패턴 기반 코드 분석기 클래스
+ * 
+ * 내부 구조:
+ * - astParser: JavaASTParser 인스턴스 (AST 파싱)
+ * - llmService: LLMService 인스턴스 (코드 수정 생성)
+ * - dynamicAnalyzer: DynamicSafePatternAnalyzer 인스턴스 (패턴 분석)
+ * 
+ * 생명주기:
+ * 1. new issueCodeAnalyzer()
+ * 2. await initialize() - LLM 및 VectorDB 연결 확인
+ * 3. await analyzeCodeIssues() - 코드 분석 실행
+ * 
+ * @class
+ * 
+ * # TODO: Python 클래스 변환 시 async with 컨텍스트 매니저 구현
+ * # PERFORMANCE: 패턴 검색 결과 캐싱 (동일 코드 재분석 시)
  */
 export class issueCodeAnalyzer {
+  /**
+   * 생성자: 분석기 및 클라이언트 초기화
+   * 
+   * 초기화 항목:
+   * 1. JavaASTParser 인스턴스 생성
+   * 2. LLMService 인스턴스 생성
+   * 3. DynamicSafePatternAnalyzer 인스턴스 생성
+   * 
+   * @constructor
+   * 
+   * # NOTE: 실제 연결은 initialize() 호출 시 수행
+   */
   constructor() {
     this.astParser = new JavaASTParser();
     this.llmService = new LLMService();
@@ -34,20 +115,53 @@ export class issueCodeAnalyzer {
   }
 
   /**
-   * VectorDB의 동적 패턴을 사용한 코드 이슈 분석
-   * 처리 흐름:
-   * 1. AST 파싱으로 코드 구조 분석
-   * 2. VectorDB에서 동적으로 안전한 패턴 확인
-   * 3. 유사 패턴을 안전한 패턴과 안티패턴으로 분류
-   * 4. 각 안티패턴에 대해 해당 카테고리가 안전하게 구현되었는지 확인
-   * 5. 동적 패턴 매칭으로 실제 이슈 탐지
-   * 6. 거짓 양성 검증 및 필터링
-   * 7. 중복 제거 및 우선순위 정렬
-   * 8. 카테고리별 권장사항 생성
+   * VectorDB 동적 패턴 기반 코드 이슈 분석 (메인 엔트리포인트)
    * 
+   * 내부 흐름 (Layer2 핵심 프로세스):
+   * 1. JavaASTParser.parseJavaCode() → 코드 구조 분석 (클래스, 메소드, 변수 추출)
+   * 2. (필요 시) CodeEmbeddingGenerator.generateEmbeddings() → 코드 벡터화
+   * 3. VectorClient.searchSimilarPatterns() → Qdrant에서 유사 패턴 검색
+   * 4. DynamicSafePatternAnalyzer.checkForSafePracticesDynamic() → 안전한 패턴 확인
+   * 5. classifySimilarPatterns() → 안전 패턴 / 안티 패턴 분류
+   * 6. 각 안티패턴에 대해 루프:
+   *    a. isCategorySafelyImplementedDynamic() → 카테고리 안전성 확인
+   *    b. findIssuesUsingDynamicPatterns() → semantic signature 기반 매칭
+   *    c. validateIssueMatch() → 거짓 양성 필터링
+   *    d. 검증된 이슈 객체 생성 및 추가
+   * 7. deduplicateIssuesStrict() → 동일 라인 중복 제거
+   * 8. prioritizeIssues() → 심각도/신뢰도/카테고리 정렬
+   * 9. generateCategoryRecommendations() → 카테고리별 권장사항 생성
+   * 
+   * 거짓 양성 필터링 전략:
+   * - 주석/문서화 라인 제외
+   * - package, import, annotation 선언문 제외
+   * - 빈 라인, 중괄호만 있는 라인 제외
+   * - 이미 안전하게 구현된 카테고리 제외
+   * - 신뢰도 0.7 미만 매칭 제외
+   * 
+   * @async
    * @param {string} sourceCode - 분석할 Java 소스 코드
-   * @param {Array} similarPatterns - VectorDB 유사도 검색으로 찾은 유사 패턴들
-   * @returns {Object} 발견된 이슈, 안전한 패턴, 권장사항을 포함한 분석 결과
+   * @param {Array} similarPatterns - VectorDB 유사도 검색 결과 (선택적)
+   *                                  미제공 시 내부에서 자동 검색
+   * @returns {Promise<Object>} 분석 결과 객체
+   * @returns {Array} return.detectedIssues - 발견된 이슈 배열
+   * @returns {Array} return.safePracticesFound - 발견된 안전한 패턴
+   * @returns {Array} return.recommendations - 카테고리별 권장사항
+   * @returns {Object} return.patternClassification - 패턴 분류 결과
+   * @returns {Object} return.analysisMetadata - 분석 메타데이터
+   * 
+   * @example
+   * const result = await analyzer.analyzeCodeIssues(javaCode);
+   * console.log(`발견된 이슈: ${result.detectedIssues.length}개`);
+   * 
+   * @example
+   * // 미리 검색한 패턴 제공
+   * const patterns = await vectorClient.searchSimilarPatterns(vector, 10);
+   * const result = await analyzer.analyzeCodeIssues(javaCode, patterns);
+   * 
+   * # TODO: Python 변환 시 TypedDict로 반환 타입 정의
+   * # PERFORMANCE: AST 파싱과 VectorDB 검색 병렬 실행 (asyncio.gather)
+   * # PERFORMANCE: 벡터 임베딩 캐싱으로 중복 생성 방지
    */
   async analyzeCodeIssues(sourceCode, similarPatterns) {
     console.log('🔍 코드 내 문제 위치 분석 시작...');

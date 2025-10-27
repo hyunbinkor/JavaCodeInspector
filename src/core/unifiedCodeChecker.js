@@ -1,3 +1,104 @@
+/**
+ * 통합 Java 코드 품질 검사 시스템 (UnifiedJavaCodeChecker)
+ * 
+ * Layer3 통합 컴포넌트 - 모든 검사 결과를 하나의 리포트로 통합
+ * 
+ * 3-Layer 아키텍처:
+ * 
+ * Layer 1 - 개발가이드 검사 (DevelopmentGuidelineChecker):
+ *   - VectorDB에서 가이드라인 규칙 로드
+ *   - 정적 규칙 검사 (정규식, AST 기반)
+ *   - 컨텍스트 규칙 검사 (vLLM 기반)
+ *   - 카테고리별 위반사항 그룹핑
+ *   - 스타일 점수 계산 (0-100)
+ * 
+ * Layer 2 - VectorDB 패턴 분석 (issueCodeAnalyzer):
+ *   - CodeEmbeddingGenerator로 코드 벡터화 (480차원)
+ *   - VectorClient로 유사 패턴 검색 (유사도 0.7+)
+ *   - DynamicSafePatternAnalyzer로 안전/위험 패턴 분류
+ *   - 카테고리별 특화 검사:
+ *     * resource_management: 리소스 누수 탐지
+ *     * security_vulnerability: SQL Injection 등
+ *     * performance_issue: N+1 쿼리 문제
+ *     * exception_handling: 부적절한 예외 처리
+ *   - 거짓 양성 필터링 (주석, 선언문 제외)
+ *   - 패턴 품질 점수 계산 (0-100)
+ * 
+ * Layer 3 - 결과 통합 및 리포트 (이 클래스):
+ *   - 가이드라인 + 패턴 결과 병합
+ *   - 우선순위 정렬:
+ *     * 심각도: CRITICAL > HIGH > MEDIUM > LOW
+ *     * 카테고리: security > resource > performance
+ *   - 통합 점수 계산 (가중 평균)
+ *   - 수정 권장사항 생성
+ *   - (옵션) 자동 수정안 생성
+ * 
+ * 분석 옵션:
+ * - skipGuidelines: 가이드라인 검사 생략
+ * - skipPatterns: 패턴 분석 생략
+ * - patternLimit: 검색할 유사 패턴 수 (기본: 10)
+ * - generateRecommendations: 권장사항 생성 (기본: true)
+ * - generateFixes: 자동 수정안 생성 (기본: false)
+ * 
+ * 통합 리포트 구조:
+ * {
+ *   "overview": {
+ *     "totalIssues": 15,
+ *     "criticalCount": 2,
+ *     "overallScore": 75.5,
+ *     "analysisDate": "2025-10-23T..."
+ *   },
+ *   "issues": [
+ *     {
+ *       "id": "issue_001",
+ *       "source": "guideline" | "pattern",
+ *       "title": "SQL Injection 취약점",
+ *       "severity": "CRITICAL",
+ *       "category": "security_vulnerability",
+ *       "location": { "startLine": 42, "endLine": 45 },
+ *       "description": "...",
+ *       "recommendation": "PreparedStatement 사용",
+ *       "codeSnippet": "...",
+ *       "fixable": true
+ *     }
+ *   ],
+ *   "recommendations": {
+ *     "immediate": [...],  // CRITICAL/HIGH 이슈
+ *     "planned": [...],    // MEDIUM 이슈
+ *     "optional": [...]    // LOW 이슈
+ *   },
+ *   "scores": {
+ *     "styleScore": 85,
+ *     "patternScore": 70,
+ *     "overallScore": 77.5
+ *   }
+ * }
+ * 
+ * 호출 체인:
+ * 1. analyzeCode() → 메인 엔트리포인트
+ * 2. performGuidelineCheck() → DevelopmentGuidelineChecker.checkRules()
+ * 3. performPatternAnalysis():
+ *    a. PatternDatasetGenerator.generateEmbeddings()
+ *    b. VectorClient.searchSimilarPatterns()
+ *    c. issueCodeAnalyzer.analyzeCodeIssues()
+ * 4. unifyResults() → 결과 병합 및 우선순위 정렬
+ * 5. (옵션) generateFixSuggestions() → 자동 수정안 생성
+ * 
+ * @module UnifiedJavaCodeChecker
+ * @requires JavaASTParser - Java AST 파싱
+ * @requires LLMService - vLLM 기반 분석
+ * @requires issueCodeAnalyzer - 패턴 기반 이슈 분석
+ * @requires VectorClient - VectorDB 연동
+ * @requires PatternDatasetGenerator - 임베딩 생성
+ * @requires DevelopmentGuidelineChecker - 가이드라인 검증
+ * 
+ * # TODO: Node.js → Python 변환 (FastAPI + Pydantic)
+ * # TODO: 병렬 실행 Promise.all → asyncio.gather
+ * # TODO: 리포트 생성 → Jinja2 템플릿
+ * # NOTE: 금융권 보안: 민감 정보 마스킹 필요
+ * # PERFORMANCE: 가이드라인 + 패턴 검사 병렬 실행 (현재 구현됨)
+ * # PERFORMANCE: 결과 캐싱 (동일 코드 재분석 시)
+ */
 import { JavaASTParser } from '../ast/javaAstParser.js';
 import { LLMService } from '../clients/llmService.js';
 import { issueCodeAnalyzer } from './issueCodeAnalyzer.js';
@@ -7,7 +108,21 @@ import { DevelopmentGuidelineChecker } from './guidelineChecker.js';
 import { config } from '../config.js';
 
 /**
+ * 통합 Java 코드 품질 검사 클래스 (Layer3 Component)
+ * 
  * Java 코드 품질 검사 통합 시스템
+ * 
+ * 내부 구조:
+ * - astParser: JavaASTParser - AST 파싱
+ * - llmService: LLMService - vLLM 연동
+ * - vectorClient: VectorClient - VectorDB 연동
+ * - issueCodeAnalyzer: issueCodeAnalyzer - 패턴 분석
+ * - guidelineChecker: DevelopmentGuidelineChecker - 가이드라인 검증
+ * 
+ * 생명주기:
+ * 1. new UnifiedJavaCodeChecker()
+ * 2. await initialize() - 모든 컴포넌트 초기화
+ * 3. await analyzeCode(sourceCode, options) - 코드 분석 (반복 호출 가능)
  * 
  * 3계층 분석 아키텍처:
  * - Layer 1: 개발가이드 검사
@@ -22,8 +137,27 @@ import { config } from '../config.js';
  *   - 심각도(CRITICAL > HIGH > MEDIUM > LOW) 기준 정렬
  *   - 카테고리별(보안 > 리소스 > 성능 순) 우선순위 결정
  *   - 수정 난이도(effort) 고려한 실행 가능한 권장사항 생성
+ * 
+ * @class
+ * 
+ * # TODO: Python 클래스 변환 시 async with 컨텍스트 매니저
+ * # PERFORMANCE: 컴포넌트 초기화 결과 캐싱
  */
 export class UnifiedJavaCodeChecker {
+  /**
+   * 생성자: 모든 분석 컴포넌트 초기화
+   * 
+   * 초기화 항목:
+   * 1. JavaASTParser 인스턴스 생성 - Java 소스코드 구문 트리 변환
+   * 2. LLMService 인스턴스 생성 - 컨텍스트 기반 코드 분석
+   * 3. VectorClient 인스턴스 생성 - 코드 패턴 유사도 검색
+   * 4. issueCodeAnalyzer 인스턴스 생성 - 안티패턴 탐지 및 분류
+   * 5. DevelopmentGuidelineChecker 인스턴스 생성 - LLM 기반 컨텍스트 분석
+   * 
+   * @constructor
+   * 
+   * # NOTE: 실제 초기화는 initialize() 호출 시 수행
+   */
   constructor() {
     // AST 파서 초기화 - Java 소스코드를 구문 트리로 변환
     this.astParser = new JavaASTParser();
@@ -42,10 +176,27 @@ export class UnifiedJavaCodeChecker {
   }
 
   /**
-   * 시스템 초기화 프로세스
-   * 1. LLM 서비스 연결 확인 (health check)
-   * 2. issueCodeAnalyzer 초기화 (패턴 분석 준비)
-   * 3. guidelineChecker 초기화 (규칙 로드)
+   * 통합 시스템 초기화 프로세스
+   * 
+   * 내부 흐름:
+   * 1. LLMService.checkConnection() → vLLM 서비스 health check
+   * 2. issueCodeAnalyzer.initialize():
+   *    - DynamicSafePatternAnalyzer 초기화
+   *    - VectorDB에서 패턴 로드 및 분류
+   * 3. guidelineChecker.initialize():
+   *    - VectorDB에서 가이드라인 규칙 로드
+   *    - 정적/컨텍스트 규칙 분류
+   * 
+   * @async
+   * @returns {Promise<void>}
+   * @throws {Error} LLM 서비스 연결 실패 시
+   * 
+   * @example
+   * const checker = new UnifiedJavaCodeChecker();
+   * await checker.initialize();
+   * 
+   * # TODO: Python 변환 시 async def __aenter__ 구현
+   * # PERFORMANCE: 초기화 시간 측정 및 로깅
    */
   async initialize() {
     console.log('🚀 통합 코드 품질 검사 시스템 초기화 중...');

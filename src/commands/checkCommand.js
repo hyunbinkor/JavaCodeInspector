@@ -1,19 +1,18 @@
-/**
- * 통합 코드 품질 검사 명령어
- */
-
-import fs from 'fs/promises';
 import path from 'path';
 import { UnifiedJavaCodeChecker } from '../core/unifiedCodeChecker.js';
 import { buildOptimizedReport } from '../services/reportGeneratorService.js';
 import { displayUnifiedResults } from '../utils/displayUtils.js';
+import { loadData, saveJsonData } from '../utils/fileUtils.js';
 
 /**
  * 통합 코드 품질 검사 수행
- * 1. UnifiedJavaCodeChecker 초기화
- * 2. 검사 옵션에 따라 가이드라인, 맥락 검사, 패턴 분석 수행
- * 3. 결과를 우선순위화하여 통합 리포트 생성
- * 4. 옵션에 따라 최적화된 JSON 리포트 저장
+ * 
+ * 내부 흐름:
+ * 1. DevelopmentGuidelineChecker로 가이드라인 규칙 검증
+ * 2. CodeEmbeddingGenerator로 코드 벡터 생성
+ * 3. Qdrant VectorDB에서 유사 패턴 검색
+ * 4. IssueCodeAnalyzer로 패턴 분석 및 수정안 생성
+ * 5. UnifiedJavaCodeChecker로 통합 리포트 생성
  */
 export async function performUnifiedCheck(options) {
   if (!options.code) {
@@ -24,7 +23,7 @@ export async function performUnifiedCheck(options) {
   console.log('=== 통합 Java 코드 품질 검사 시작 ===');
   console.log(`대상 파일: ${options.code}`);
 
-  const sourceCode = await fs.readFile(options.code, 'utf-8');
+  const sourceCode = await loadData(options.code, 'sampleCode');
   const fileName = path.basename(options.code);
 
   // 통합 검사기 초기화 (AST 파서, 가이드라인 체커, VectorDB 등)
@@ -63,7 +62,7 @@ export async function performUnifiedCheck(options) {
       checkOptions
     );
 
-    await fs.writeFile(options.output, JSON.stringify(optimizedReport, null, 2), 'utf-8');
+    await saveJsonData (optimizedReport, options.output, 'report');
     console.log(`\n결과 저장: ${options.output}`);
     console.log(`파일 크기: ${(JSON.stringify(optimizedReport).length / 1024).toFixed(2)} KB`);
   }

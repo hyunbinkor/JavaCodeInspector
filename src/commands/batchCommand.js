@@ -1,27 +1,25 @@
-/**
- * 배치 이슈 처리 명령어
- */
-
 import path from 'path';
 import { PatternDatasetGenerator } from '../core/patternGenerator.js';
-import { loadIssueData, savePatternDataset, getJsonFiles } from '../utils/fileUtils.js';
+import { getJsonFiles, loadData, saveJsonData } from '../utils/fileUtils.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 /**
  * 배치 이슈 처리
- * 1. 디렉토리 내 모든 JSON 파일 탐색
- * 2. 각 파일에 대해 패턴 데이터셋 생성
- * 3. 성공/실패 결과 집계 및 평균 품질 점수 계산
+ * 
+ * 내부 흐름:
+ * 1. 입력 디렉토리의 모든 JSON 파일 스캔
+ * 2. 각 파일에 대해 processSingleIssue() 로직 반복 실행
+ * 3. PatternDatasetGenerator로 배치 패턴 생성
+ * 4. 생성된 패턴들을 출력 디렉토리에 저장
  */
 export async function processBatchIssues(options) {
-  if (!options.input) {
-    console.error('입력 디렉토리를 지정해주세요: -i <dir>');
-    return;
-  }
 
   console.log('배치 처리 시작');
-  console.log(`입력 디렉토리: ${options.input}`);
+  console.log(`입력 디렉토리: ${process.env.SAMPLE_CODE_DIRECTORY}`);
 
-  const issueFiles = await getJsonFiles(options.input);
+  const issueFiles = await getJsonFiles(process.env.SAMPLE_CODE_DIRECTORY);
   console.log(`발견된 이슈 파일: ${issueFiles.length}개`);
 
   if (issueFiles.length === 0) {
@@ -43,14 +41,14 @@ export async function processBatchIssues(options) {
     try {
       console.log(`\n처리 중 (${i + 1}/${issueFiles.length}): ${fileName}`);
 
-      const issueData = await loadIssueData(filePath);
+      const issueData = await loadData(filePath, 'issueRaw');
       const patternDataset = await generator.generatePatternDataset(issueData);
 
       results.push(patternDataset);
 
       if (options.output) {
         const outputPath = path.join(options.output, `pattern_${patternDataset.issue_record_id}.json`);
-        await savePatternDataset(patternDataset, outputPath);
+        await saveJsonData(patternDataset, outputPath, 'issuePattern');
       }
 
       console.log(`  완료: ${patternDataset.issue_record_id} (품질: ${patternDataset.validation_info.quality_score.toFixed(2)})`);

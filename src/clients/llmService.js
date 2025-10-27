@@ -10,8 +10,17 @@ export class LLMService {
     this.llmClient = new LLMClient();
 
     // 기존 코드와의 하위 호환성을 위한 속성들
-    this.baseUrl = config.llm.provider === 'ollama' ? config.llm.ollama.baseUrl : 'bedrock';
-    this.model = config.llm.provider === 'ollama' ? config.llm.ollama.model : config.llm.bedrock.modelId;
+    if (config.llm.provider === 'ollama') {
+      this.baseUrl = config.llm.ollama.baseUrl;
+      this.model = config.llm.ollama.model;
+    } else if (config.llm.provider === 'vllm') {
+      this.baseUrl = config.llm.vllm.baseUrl;
+      this.model = config.llm.vllm.model;
+    } else {
+      this.baseUrl = 'bedrock';
+      this.model = config.llm.bedrock.modelId;
+    }
+    
     this.isQwen3 = this.model && this.model.toLowerCase().includes('qwen');
 
     console.log(`🔧 LLM 서비스 초기화 완료 (제공자: ${config.llm.provider})`);
@@ -77,6 +86,7 @@ export class LLMService {
         const options = {
           temperature: strategy.temp,
           num_predict: strategy.tokens,
+          max_tokens: strategy.tokens,
           top_p: 0.9,
           repeat_penalty: 1.1
         };
@@ -120,7 +130,8 @@ export class LLMService {
     try {
       const response = await this.llmClient.generateCompletion(prompt, {
         temperature: 0.1,
-        num_predict: 2000
+        num_predict: 2000,
+        max_tokens: 2000
       });
 
       console.log('🔍 프레임워크 분석 결과에서 JSON 추출 중...');
@@ -152,6 +163,7 @@ export class LLMService {
       const response = await this.generateCompletion(prompt, {
         temperature: 0.1,
         num_predict: 2000,
+        max_tokens: 2000,
         ...options
       });
 
@@ -287,16 +299,14 @@ export class LLMService {
 
   /**
    * 잘못된 JSON 문법을 자동으로 수정 시도
-   * 후행 쉼표 제거, 작은따옴표를 큰따옴표로, 키에 따옴표 추가 등
+   * 따옴표 누락, 트레일링 콤마 등의 문제 해결
    */
   repairJSON(jsonText) {
     try {
       let repaired = jsonText
         .replace(/,\s*}/g, '}')
         .replace(/,\s*]/g, ']')
-        .replace(/'/g, '"')
-        .replace(/(\w+):/g, '"$1":')
-        .replace(/:\s*([^",\[\]{}]+?)(?=\s*[,}])/g, ': "$1"');
+        .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":');
 
       return JSON.parse(repaired);
     } catch (error) {
@@ -305,254 +315,244 @@ export class LLMService {
   }
 
   /**
-   * 패턴 JSON이 필수 필드를 모두 포함하고 올바른 타입인지 검증
-   * metadata, anti_pattern, recommended_pattern, impact_analysis 확인
+   * 추출된 패턴 JSON의 구조가 유효한지 검증
+   * 필수 필드 존재 여부 확인
    */
   validatePatternStructure(pattern) {
-    const requiredFields = ['metadata', 'anti_pattern', 'recommended_pattern', 'impact_analysis'];
-
-    for (const field of requiredFields) {
-      if (!pattern[field] || typeof pattern[field] !== 'object') {
-        console.warn(`⚠️ 필수 필드 누락 또는 잘못된 타입: ${field}`);
-        return false;
-      }
-    }
-
-    if (!pattern.metadata.title || !pattern.metadata.category) {
-      console.warn('⚠️ metadata 필수 필드 누락');
+    if (!pattern || typeof pattern !== 'object') {
+      console.log('❌ 패턴이 객체가 아닙니다');
       return false;
     }
 
+    const requiredFields = ['metadata', 'anti_pattern', 'recommended_pattern', 'impact_analysis'];
+    const hasAllFields = requiredFields.every(field => field in pattern);
+
+    if (!hasAllFields) {
+      const missingFields = requiredFields.filter(field => !(field in pattern));
+      console.log(`❌ 필수 필드 누락: ${missingFields.join(', ')}`);
+      return false;
+    }
+
+    console.log('✅ 패턴 구조 검증 완료');
     return true;
   }
 
   /**
-   * LLM이 생성한 패턴에 누락된 필드를 issueData로 보완
-   * severity, tags, code_template, occurrence_frequency 등 추가
+   * 추출된 패턴을 강화하여 부족한 필드 보완
+   * issueData 정보를 사용해 누락된 부분 채우기
    */
   enhanceExtractedPattern(pattern, issueData) {
-    if (!pattern.metadata.severity) {
-      pattern.metadata.severity = issueData.severity || 'MEDIUM';
+    const enhanced = { ...pattern };
+
+    if (!enhanced.metadata) {
+      enhanced.metadata = {};
+    }
+    enhanced.metadata.title = enhanced.metadata.title || issueData.title || 'Pattern Analysis';
+    enhanced.metadata.category = enhanced.metadata.category || issueData.category || 'general';
+    enhanced.metadata.severity = enhanced.metadata.severity || issueData.severity || 'MEDIUM';
+
+    if (!enhanced.metadata.tags) {
+      enhanced.metadata.tags = [config.llm.provider, 'auto-generated'];
+    } else if (!Array.isArray(enhanced.metadata.tags)) {
+      enhanced.metadata.tags = [enhanced.metadata.tags];
     }
 
-    if (!pattern.metadata.tags || pattern.metadata.tags.length === 0) {
-      pattern.metadata.tags = ['auto-generated', 'pattern-analysis'];
-    }
-
-    if (!pattern.anti_pattern.code_template) {
-      pattern.anti_pattern.code_template = issueData.problematicCode || '// 문제 코드';
-    }
-
-    if (!pattern.recommended_pattern.code_template) {
-      pattern.recommended_pattern.code_template = issueData.fixedCode || '// 수정된 코드';
-    }
-
-    if (!pattern.impact_analysis.historical_data) {
-      pattern.impact_analysis.historical_data = {
-        occurrence_frequency: issueData.occurrenceCount || 1,
-        fix_effort_estimation: {
-          complexity: 'MEDIUM',
-          estimated_hours: 3,
-          required_expertise: ['java_developer']
-        }
+    if (!enhanced.anti_pattern) {
+      enhanced.anti_pattern = {
+        code_template: issueData.problematicCode || '',
+        pattern_signature: { semantic_signature: 'unknown' },
+        problematic_characteristics: {}
       };
     }
 
-    return pattern;
+    if (!enhanced.recommended_pattern) {
+      enhanced.recommended_pattern = {
+        code_template: issueData.fixedCode || '',
+        pattern_name: 'recommended_pattern',
+        implementation_guide: {}
+      };
+    }
+
+    if (!enhanced.impact_analysis) {
+      enhanced.impact_analysis = {
+        production_impact: {},
+        historical_data: {}
+      };
+    }
+
+    return enhanced;
   }
 
   /**
-   * 전략과 제공자에 따라 최적화된 프롬프트 생성
-   * Claude는 XML 형식, Qwen3는 간결한 형식, 기타는 범용 형식
+   * 전략에 따라 다른 형식의 프롬프트 생성
+   * optimized, structured, simple, micro 전략 각각 다른 템플릿 사용
    */
-  createBasicPatternPrompt(issueData, strategy = 'optimized') {
-    if (config.llm.provider === 'bedrock' && !config.llm.bedrock.isDeepSeekR1) {
-      return this.createClaudePrompt(issueData);
-    } else if (this.isQwen3) {
-      return this.createQwen3OptimizedPrompt(issueData, strategy);
+  createBasicPatternPrompt(issueData, strategy) {
+    const provider = config.llm.provider;
+
+    if (strategy === 'optimized') {
+      return this.createOptimizedPrompt(issueData, provider);
+    } else if (strategy === 'structured') {
+      return this.createStructuredPrompt(issueData, provider);
+    } else if (strategy === 'simple') {
+      return this.createSimplePrompt(issueData, provider);
+    } else if (strategy === 'micro') {
+      return this.createMicroPrompt(issueData, provider);
     } else {
       return this.createGenericPrompt(issueData);
     }
   }
 
   /**
-   * Claude 모델을 위한 XML 태그 기반 프롬프트 생성
-   * 구조화된 형식으로 issue_data 제공 및 완전한 JSON 스키마 명시
+   * Optimized 전략 프롬프트 생성
+   * Bedrock과 vLLM/Ollama에 따라 다른 형식 사용
    */
-  createClaudePrompt(issueData) {
-    return `Java 코드 이슈를 분석하고 완전한 JSON 응답을 한글로 작성해주세요. 모든 필수 필드를 포함해야 합니다.
+  createOptimizedPrompt(issueData, provider) {
+    if (provider === 'bedrock' && !config.llm.bedrock.isDeepSeekR1) {
+      return `다음 Java 코드 이슈를 분석하고 완전한 JSON 응답을 한글로 작성해주세요.
 
 <issue_data>
-이슈 ID: ${issueData.issueId}
 제목: ${issueData.title}
-설명: ${issueData.description || '설명 없음'}
-카테고리: ${issueData.category || 'resource_management'}
-심각도: ${issueData.severity || 'MEDIUM'}
-발생 횟수: ${issueData.occurrenceCount || 1}회
+카테고리: ${issueData.category}
+심각도: ${issueData.severity}
 
 문제 코드:
-${issueData.problematicCode}
+${this.truncateCode(issueData.problematicCode, 800)}
 
 수정된 코드:
-${issueData.fixedCode}
+${this.truncateCode(issueData.fixedCode, 800)}
 </issue_data>
 
-다음 JSON 구조로 정확히 응답해주세요:
+아래 JSON 구조로 모든 필드를 완성하여 응답해주세요:
 
 {
   "metadata": {
-    "title": "이슈를 설명하는 간결한 한글 제목",
-    "category": "${issueData.category || 'resource_management'}",
-    "severity": "${issueData.severity || 'MEDIUM'}",
-    "tags": ["관련", "태그", "한글로"]
+    "title": "간결하고 명확한 제목 (한글)",
+    "category": "${issueData.category}",
+    "severity": "${issueData.severity}",
+    "tags": ["${provider}", "pattern-analysis", "관련태그들"]
   },
   "anti_pattern": {
-    "code_template": "문제가 되는 코드의 일반화된 템플릿",
+    "code_template": "${this.truncateCode(issueData.problematicCode, 300)}",
     "pattern_signature": {
-      "semantic_signature": "패턴을_설명하는_영어_이름",
-      "regex_patterns": ["탐지용 정규표현식1", "탐지용 정규표현식2"]
+      "semantic_signature": "문제를_설명하는_영어_이름",
+      "regex_patterns": ["정규표현식_패턴들"]
     },
     "problematic_characteristics": {
-      "missing_operations": ["누락된 작업 1", "누락된 작업 2"],
-      "incorrect_usage": ["잘못된 사용법 1", "잘못된 사용법 2"],
-      "framework_violations": ["프레임워크 위반사항 1", "프레임워크 위반사항 2"]
+      "missing_operations": ["누락된 작업들"],
+      "incorrect_usage": ["잘못된 사용 패턴들"],
+      "framework_violations": ["프레임워크 위반 사항들"]
     }
   },
   "recommended_pattern": {
-    "code_template": "올바른 코드의 일반화된 템플릿",
+    "code_template": "${this.truncateCode(issueData.fixedCode, 300)}",
     "pattern_name": "권장_패턴_영어_이름",
     "implementation_guide": {
-      "best_practices": ["모범 사례 1", "모범 사례 2"],
-      "framework_specific_notes": ["프레임워크별 주의사항 1", "프레임워크별 주의사항 2"]
+      "best_practices": ["권장 사항 1", "권장 사항 2"],
+      "framework_specific_notes": ["프레임워크별 주의사항"]
     }
   },
   "impact_analysis": {
     "production_impact": {
       "failure_scenarios": ["장애 시나리오 1", "장애 시나리오 2"],
       "performance_degradation": {
-        "response_time_impact": "응답 시간에 미치는 영향에 대한 한글 설명",
-        "throughput_impact": "처리량에 미치는 영향에 대한 한글 설명",
-        "resource_consumption": "리소스 사용량에 미치는 영향에 대한 한글 설명"
+        "response_time_impact": "응답 시간 영향",
+        "throughput_impact": "처리량 영향",
+        "resource_consumption": "리소스 사용량 영향"
       }
     },
     "historical_data": {
       "occurrence_frequency": ${issueData.occurrenceCount || 1},
       "fix_effort_estimation": {
-        "complexity": "LOW",
-        "estimated_hours": 2,
-        "required_expertise": ["자바 개발자"]
+        "complexity": "LOW|MEDIUM|HIGH",
+        "estimated_hours": 4,
+        "required_expertise": ["필요한 전문 지식"]
       }
     }
   }
 }
 
-중요: 위의 JSON 객체만 반환하세요. 마크다운 형식이나 추가 설명은 포함하지 마세요.`;
+마크다운 형식이나 추가 설명 없이 순수 JSON 객체만 반환하세요.`;
+    } else {
+      return `Java 코드 패턴을 분석하고 완전한 JSON 객체를 생성하세요.
+
+이슈: ${issueData.title}
+카테고리: ${issueData.category}
+심각도: ${issueData.severity}
+
+문제 코드:
+${this.truncateCode(issueData.problematicCode, 500)}
+
+수정 코드:
+${this.truncateCode(issueData.fixedCode, 500)}
+
+다음 필드를 모두 포함하는 JSON을 생성하세요:
+1. metadata (title, category, severity, tags)
+2. anti_pattern (code_template, pattern_signature, problematic_characteristics)
+3. recommended_pattern (code_template, pattern_name, implementation_guide)
+4. impact_analysis (production_impact, historical_data)
+
+완전한 JSON만 반환하세요.`;
+    }
   }
 
   /**
-   * Qwen3 모델을 위한 전략별 최적화 프롬프트 생성
-   * 전략에 따라 프롬프트 길이와 상세도 조절
+   * Structured 전략 프롬프트 생성
    */
-  createQwen3OptimizedPrompt(issueData, strategy) {
-    const codeLimit = {
-      'optimized': 1200,
-      'structured': 800,
-      'simple': 300,
-      'micro': 200
-    }[strategy] || 1200;
+  createStructuredPrompt(issueData, provider) {
+    return `다음 코드 이슈를 분석하세요.
 
-    const truncatedCode = this.truncateCode(issueData.problematicCode, codeLimit);
-    const truncatedFixedCode = this.truncateCode(issueData.fixedCode, codeLimit);
+제목: ${issueData.title}
+카테고리: ${issueData.category}
 
-    if (strategy === 'micro') {
-      return `Analyze this database connection leak issue:
+문제 코드:
+${this.truncateCode(issueData.problematicCode, 600)}
 
-Problem: ${issueData.title}
-Code issue: Connection not closed properly in UserService
+수정 코드:
+${this.truncateCode(issueData.fixedCode, 600)}
 
-Return minimal JSON:
+필수 JSON 구조로 응답하세요:
 {
-  "metadata": {"title": "Database Connection Leak", "category": "resource_management", "severity": "HIGH", "tags": ["database", "connection", "leak"]},
-  "anti_pattern": {"code_template": "Connection not closed", "pattern_signature": {"semantic_signature": "connection_leak", "regex_patterns": ["getConnection.*without.*close"]}},
-  "recommended_pattern": {"code_template": "try-with-resources", "pattern_name": "auto_close_connection", "implementation_guide": {"best_practices": ["Use try-with-resources"]}},
-  "impact_analysis": {"production_impact": {"failure_scenarios": ["Connection pool exhaustion"]}, "historical_data": {"occurrence_frequency": ${issueData.occurrenceCount || 1}}}
-}`;
-    }
+  "metadata": {"title": "...", "category": "${issueData.category}", "severity": "${issueData.severity}", "tags": []},
+  "anti_pattern": {"code_template": "...", "pattern_signature": {}, "problematic_characteristics": {}},
+  "recommended_pattern": {"code_template": "...", "pattern_name": "...", "implementation_guide": {}},
+  "impact_analysis": {"production_impact": {}, "historical_data": {}}
+}
 
-    if (strategy === 'simple') {
-      return `Java issue: "${issueData.title}"
-
-Problem code:
-${truncatedCode}
-
-Solution code:
-${truncatedFixedCode}
-
-Generate JSON with required fields:
-{
-  "metadata": {"title": "Brief title", "category": "${issueData.category}", "severity": "${issueData.severity}", "tags": ["tag1", "tag2"]},
-  "anti_pattern": {"code_template": "problem template", "pattern_signature": {"semantic_signature": "pattern_name", "regex_patterns": ["regex1"]}},
-  "recommended_pattern": {"code_template": "solution template", "pattern_name": "solution", "implementation_guide": {"best_practices": ["practice1"]}},
-  "impact_analysis": {"production_impact": {"failure_scenarios": ["scenario1"]}, "historical_data": {"occurrence_frequency": ${issueData.occurrenceCount}}}
-}`;
-    }
-
-    const basePrompt = `# Java Code Pattern Analysis Task
-
-## Issue Information
-- **ID**: ${issueData.issueId}
-- **Title**: ${issueData.title}
-- **Category**: ${issueData.category || 'resource_management'}
-- **Severity**: ${issueData.severity || 'MEDIUM'}
-
-## Problematic Code
-\`\`\`java
-${truncatedCode}
-\`\`\`
-
-## Fixed Code
-\`\`\`java
-${truncatedFixedCode}
-\`\`\``;
-
-    if (strategy === 'structured') {
-      return basePrompt + `
-
-## Output Format
-Respond with only a valid JSON object:
-
-{
-  "metadata": {
-    "title": "String - Brief issue title",
-    "category": "String - ${issueData.category || 'resource_management'}",
-    "severity": "String - ${issueData.severity || 'MEDIUM'}",
-    "tags": ["Array of strings"]
-  },
-  "anti_pattern": {
-    "code_template": "String - Problematic code template",
-    "pattern_signature": {
-      "semantic_signature": "String - Pattern identifier",
-      "regex_patterns": ["Array of regex patterns"]
-    }
-  },
-  "recommended_pattern": {
-    "code_template": "String - Correct code template",
-    "pattern_name": "String - Solution pattern name"
-  },
-  "impact_analysis": {
-    "production_impact": {
-      "failure_scenarios": ["Array of failure scenarios"]
-    },
-    "historical_data": {
-      "occurrence_frequency": ${issueData.occurrenceCount || 1}
-    }
+JSON만 반환하세요.`;
   }
-}`;
-    }
 
-    return basePrompt + `
+  /**
+   * Simple 전략 프롬프트 생성 - 간단하고 직접적인 요청
+   */
+  createSimplePrompt(issueData) {
+    return `이슈를 분석하고 JSON으로 응답하세요.
 
-## Analysis Requirements
+${issueData.title}
+
+문제: ${this.truncateCode(issueData.problematicCode, 400)}
+수정: ${this.truncateCode(issueData.fixedCode, 400)}
+
+필요한 필드: metadata, anti_pattern, recommended_pattern, impact_analysis
+
+완전한 JSON만 반환하세요.`;
+  }
+
+  /**
+   * Micro 전략 프롬프트 생성 - 최소한의 정보만 제공
+   */
+  createMicroPrompt(issueData) {
+    return `패턴을 JSON으로 분석하세요:
+
+${issueData.category}: ${issueData.title}
+
+문제 코드:
+${this.truncateCode(issueData.problematicCode, 300)}
+
+수정 코드:
+${this.truncateCode(issueData.fixedCode, 300)}
+
+필수 구조:
 1. Identify the core anti-pattern
 2. Provide a generalized template
 3. Suggest the recommended solution pattern
@@ -585,7 +585,9 @@ ${issueData.fixedCode}
    * 어노테이션과 클래스 정보를 포함하여 탐지 규칙 생성 요청
    */
   createFrameworkAnalysisPrompt(issueData, annotations, classes) {
-    if (config.llm.provider === 'bedrock' && !config.llm.bedrock.isDeepSeekR1) {
+    const provider = config.llm.provider;
+    
+    if (provider === 'bedrock' && !config.llm.bedrock.isDeepSeekR1) {
       return `감지된 프레임워크 구성요소를 분석하고 완전한 JSON 응답을 한글로 작성해주세요.
 
 <framework_data>

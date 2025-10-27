@@ -13,7 +13,7 @@ try {
 
 /**
  * 통합 LLM 클라이언트
- * Bedrock (Claude, DeepSeek-R1), Ollama, 향후 vLLM 등 지원
+ * Bedrock (Claude, DeepSeek-R1), Ollama, vLLM 지원
  */
 export class LLMClient {
   constructor(customConfig = {}) {
@@ -23,6 +23,28 @@ export class LLMClient {
     };
 
     console.log(`\n=== LLM 제공자: ${this.config.provider.toUpperCase()} ===`);
+
+    // HTTP Agent 생성 (Keep-Alive 활성화)
+    // ECONNRESET 방지를 위한 연결 재사용 및 Keep-Alive 설정
+    this.httpAgent = new http.Agent({
+      keepAlive: true,              // 연결 재사용 활성화
+      keepAliveMsecs: 30000,        // 30초마다 keep-alive 패킷 전송
+      maxSockets: 10,               // 동시 연결 최대 10개
+      maxFreeSockets: 5,            // 유휴 연결 최대 5개 유지
+      timeout: 600000,              // 연결 타임아웃 10분
+      scheduling: 'lifo'            // 가장 최근 사용한 소켓 우선 재사용
+    });
+
+    this.httpsAgent = new https.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 10,
+      maxFreeSockets: 5,
+      timeout: 600000,
+      scheduling: 'lifo'
+    });
+
+    console.log('✅ HTTP Agent 초기화 완료 (Keep-Alive 활성화)');
 
     // 모델 ID에 'deepseek' 문자열 포함 여부 확인
     this.detectDeepSeekR1Model();
@@ -48,13 +70,15 @@ export class LLMClient {
 
   /**
    * 설정된 제공자에 따라 적절한 LLM 클라이언트 초기화
-   * bedrock 또는 ollama에 따라 분기 처리
+   * bedrock, ollama, vllm에 따라 분기 처리
    */
   async initializeLLMClient() {
     if (this.config.provider === 'bedrock') {
       await this.initializeBedrockClient();
     } else if (this.config.provider === 'ollama') {
       await this.initializeOllamaClient();
+    } else if (this.config.provider === 'vllm') {
+      await this.initializeVllmClient();
     } else {
       throw new Error(`지원하지 않는 LLM 제공자: ${this.config.provider}`);
     }
@@ -107,8 +131,25 @@ export class LLMClient {
   }
 
   /**
+   * vLLM 서버 연결 정보를 객체로 저장
+   * baseUrl, 모델명, 타임아웃 설정 보관
+   */
+  async initializeVllmClient() {
+    this.vllmClient = {
+      baseUrl: this.config.vllm.baseUrl,
+      model: this.config.vllm.model,
+      timeout: this.config.vllm.timeout || 180000
+    };
+
+    console.log(`✅ vLLM 클라이언트 초기화 완료`);
+    console.log(`URL: ${this.vllmClient.baseUrl}`);
+    console.log(`모델: ${this.vllmClient.model}`);
+    console.log(`타임아웃: ${this.vllmClient.timeout}ms`);
+  }
+
+  /**
    * 현재 설정된 제공자의 API 연결 상태를 테스트
-   * bedrock 또는 ollama 테스트 메서드로 분기
+   * bedrock, ollama, vllm 테스트 메서드로 분기
    */
   async checkConnection() {
     console.log(`🔍 ${this.config.provider.toUpperCase()} 연결 확인 중...`);
@@ -117,6 +158,8 @@ export class LLMClient {
       return await this.testBedrockConnection();
     } else if (this.config.provider === 'ollama') {
       return await this.testOllamaConnection();
+    } else if (this.config.provider === 'vllm') {
+      return await this.testVllmConnection();
     }
 
     return false;
@@ -186,14 +229,53 @@ export class LLMClient {
   }
 
   /**
+   * vLLM 서버의 /v1/models 엔드포인트로 사용 가능한 모델 목록 조회
+   * 설정된 모델이 목록에 있는지 확인
+   */
+  async testVllmConnection() {
+    try {
+      console.log('vLLM 서버 연결 테스트 중...');
+
+      const response = await this.makeHttpRequest(
+        `${this.config.vllm.baseUrl}/v1/models`,
+        'GET',
+        null,
+        {},
+        10000
+      );
+
+      if (response && response.data) {
+        const modelIds = response.data.map(m => m.id);
+        console.log(`✅ vLLM 서버 연결 성공. 사용 가능한 모델: ${modelIds.slice(0, 3).join(', ')}${modelIds.length > 3 ? '...' : ''}`);
+
+        const configuredModel = this.config.vllm.model;
+        const modelExists = modelIds.includes(configuredModel);
+
+        if (modelExists) {
+          console.log(`✅ 설정된 모델 '${configuredModel}' 사용 가능`);
+        } else {
+          console.warn(`⚠️ 설정된 모델 '${configuredModel}'을 찾을 수 없습니다.`);
+        }
+
+        return true;
+      }
+    } catch (error) {
+      console.warn(`⚠️ vLLM 서버 연결 실패: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
    * 설정된 제공자에 따라 적절한 완성 생성 메서드 호출
-   * bedrock 또는 ollama 완성 생성으로 분기
+   * bedrock, ollama, vllm 완성 생성으로 분기
    */
   async generateCompletion(prompt, options = {}) {
     if (this.config.provider === 'bedrock') {
       return await this.generateBedrockCompletion(prompt, options);
     } else if (this.config.provider === 'ollama') {
       return await this.generateOllamaCompletion(prompt, options);
+    } else if (this.config.provider === 'vllm') {
+      return await this.generateVllmCompletion(prompt, options);
     }
   }
 
@@ -274,217 +356,201 @@ export class LLMClient {
           requestBody,
           {
             'Content-Type': 'application/json',
-            'Connection': 'close',
-            'User-Agent': 'Code-Pattern-Analyzer/1.0'
+            'Accept': 'application/json'
+            // Connection: 'close' 제거 - Keep-Alive를 위해
           },
           timeoutMs
         );
 
         if (!response || !response.response) {
-          throw new Error('올바르지 않은 응답 형식');
+          throw new Error('Invalid or empty response from Ollama');
         }
 
         console.log(`✅ OLLAMA API 호출 성공 (시도 ${attempt})`);
         console.log(`📏 응답 길이: ${response.response.length}자`);
+
         return response.response;
 
       } catch (error) {
-        console.log(`❌ 시도 ${attempt} 실패: ${this.getErrorDescription(error)}`);
+        console.error(`❌ 시도 ${attempt} 실패: ${this.getErrorDescription(error)}`);
 
         if (attempt < maxRetries) {
-          let delay;
-          if (error.message.includes('ECONNRESET')) {
-            delay = Math.min(10000 + (attempt * 10000), 30000);
-          } else if (error.message.includes('timeout')) {
-            delay = Math.min(5000 + (attempt * 5000), 20000);
-          } else {
-            delay = Math.min(3000 + (attempt * 2000), 15000);
-          }
-
+          const delay = 3000 * Math.pow(2, attempt - 1);
           console.log(`⏳ ${delay / 1000}초 후 재시도...`);
           await this.sleep(delay);
-
-          if (error.message.includes('ECONNRESET') && attempt === 1) {
-            console.log('🔄 연결 재설정 감지, 서버 안정화 대기...');
-            await this.sleep(15000);
-          }
         } else {
-          throw new Error(`LLM 생성 실패 (${maxRetries}번 시도): ${this.getErrorDescription(error)}`);
+          throw new Error(`Ollama 생성 실패 (${maxRetries}번 시도): ${error.message}`);
         }
       }
     }
   }
 
   /**
-   * Bedrock API InvokeModel 명령 실행
-   * DeepSeek-R1과 Claude 모델에 따라 요청 body 형식 분기 처리
+   * vLLM API 호출을 재시도 로직과 함께 수행
+   * OpenAI 호환 API 형식 사용
    */
-  async callBedrockAPI(prompt, options = {}) {
-    if (!this.bedrockClient) {
-      throw new Error('Bedrock 클라이언트가 초기화되지 않았습니다.');
-    }
+  async generateVllmCompletion(prompt, options = {}) {
+    const maxRetries = this.config.maxRetries || 2;
+    const baseTimeout = options.timeout || this.config.vllm.timeout || 90000;
 
-    try {
-      const { InvokeModelCommand } = AWS;
-      let params;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 vLLM API 호출 시도 ${attempt}/${maxRetries}...`);
 
-      if (this.config.bedrock.isDeepSeekR1) {
-        const formattedPrompt = this.formatDeepSeekR1Prompt(prompt);
-        params = {
-          modelId: this.config.bedrock.modelId,
-          contentType: 'application/json',
-          accept: 'application/json',
-          body: JSON.stringify({
-            prompt: formattedPrompt,
-            max_tokens: options.num_predict || this.config.bedrock.maxTokens,
-            temperature: options.temperature || this.config.bedrock.temperature,
-            top_p: 0.9
-          })
-        };
-      } else {
-        params = {
-          modelId: this.config.bedrock.modelId,
-          contentType: 'application/json',
-          accept: 'application/json',
-          body: JSON.stringify({
-            anthropic_version: "bedrock-2023-05-31",
-            max_tokens: options.num_predict || this.config.bedrock.maxTokens,
-            messages: [{
+        const timeoutMs = Math.min(baseTimeout + (attempt * 60000), 600000);
+        const adjustedOptions = this.adjustOptionsForLargeRequest(prompt, options);
+
+        // OpenAI 호환 API 형식 사용
+        const requestBody = {
+          model: this.config.vllm.model,
+          messages: [
+            {
               role: "user",
               content: prompt
-            }],
-            temperature: options.temperature || this.config.bedrock.temperature
-          })
+            }
+          ],
+          temperature: adjustedOptions.temperature || 0.1,
+          max_tokens: adjustedOptions.num_predict || adjustedOptions.max_tokens || 2000,
+          top_p: 0.9,
+          frequency_penalty: 0.0,
+          presence_penalty: 0.0,
+          stream: false
         };
-      }
 
-      const command = new InvokeModelCommand(params);
-      const response = await this.bedrockClient.send(command);
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        console.log(`   📊 요청 설정: 프롬프트 ${prompt.length}자, 최대 토큰 ${requestBody.max_tokens}, 타임아웃 ${timeoutMs}ms`);
 
-      if (this.config.bedrock.isDeepSeekR1) {
-        if (responseBody.choices && responseBody.choices[0] && responseBody.choices[0].text) {
-          return responseBody.choices[0].text;
-        } else if (responseBody.text) {
-          return responseBody.text;
-        } else {
-          throw new Error('DeepSeek-R1 API 응답 형식이 올바르지 않습니다.');
+        const response = await this.makeHttpRequestStable(
+          `${this.config.vllm.baseUrl}/v1/chat/completions`,
+          'POST',
+          requestBody,
+          {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+            // Connection: 'close' 제거 - Keep-Alive를 위해
+          },
+          timeoutMs
+        );
+
+        if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+          throw new Error('Invalid or empty response from vLLM');
         }
-      } else {
-        if (responseBody.content && responseBody.content[0] && responseBody.content[0].text) {
-          return responseBody.content[0].text;
+
+        const content = response.choices[0].message.content;
+
+        console.log(`✅ vLLM API 호출 성공 (시도 ${attempt})`);
+        console.log(`📏 응답 길이: ${content.length}자`);
+
+        return content;
+
+      } catch (error) {
+        console.error(`❌ 시도 ${attempt} 실패: ${this.getErrorDescription(error)}`);
+
+        if (attempt < maxRetries) {
+          const delay = 3000 * Math.pow(2, attempt - 1);
+          console.log(`⏳ ${delay / 1000}초 후 재시도...`);
+          await this.sleep(delay);
         } else {
-          throw new Error('Claude API 응답 형식이 올바르지 않습니다.');
+          throw new Error(`vLLM 생성 실패 (${maxRetries}번 시도): ${error.message}`);
         }
       }
-    } catch (error) {
-      console.error('Bedrock API 호출 실패:', error.message);
-      throw error;
     }
   }
 
   /**
-   * DeepSeek-R1 모델에 필요한 프롬프트 포맷으로 변환
-   * 특수 토큰으로 래핑하여 반환
+   * Bedrock API 호출 실행
+   * Claude 또는 DeepSeek-R1 형식으로 요청 생성 및 전송
    */
-  formatDeepSeekR1Prompt(prompt) {
-    return `<|begin▁of▁sentence|><|User|>${prompt}<|Assistant|>`;
+  async callBedrockAPI(prompt, options = {}) {
+    const { InvokeModelCommand } = AWS;
+
+    let requestBody;
+    if (this.config.bedrock.isDeepSeekR1) {
+      requestBody = {
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: options.max_tokens || this.config.bedrock.maxTokens || 4000,
+        temperature: options.temperature || this.config.bedrock.temperature || 0.1
+      };
+    } else {
+      requestBody = {
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: options.max_tokens || this.config.bedrock.maxTokens || 4000,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: options.temperature || this.config.bedrock.temperature || 0.1
+      };
+    }
+
+    const command = new InvokeModelCommand({
+      modelId: this.config.bedrock.modelId,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify(requestBody)
+    });
+
+    const response = await this.bedrockClient.send(command);
+    const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+
+    if (this.config.bedrock.isDeepSeekR1) {
+      return responseBody.choices?.[0]?.message?.content || '';
+    } else {
+      return responseBody.content?.[0]?.text || '';
+    }
   }
 
   /**
-   * HTTP/HTTPS 요청을 Promise로 래핑하여 실행
-   * 타임아웃, 에러 핸들링, 연결 재설정 처리 포함
+   * 안정적인 HTTP 요청 처리 (연결 풀 관리 포함)
+   * 타임아웃, 재시도, 에러 처리 로직 포함
    */
-  async makeHttpRequestStable(url, method, data, headers = {}, timeout = 30000) {
+  async makeHttpRequestStable(url, method, body, headers, timeout) {
+    const parsedUrl = new URL(url);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const httpModule = isHttps ? https : http;
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: method,
+      headers: {
+        'Connection': 'keep-alive',  // Keep-Alive 명시적 요청
+        ...headers,
+        'Content-Length': body ? Buffer.byteLength(JSON.stringify(body)) : 0
+      },
+      timeout: timeout,
+      agent: isHttps ? this.httpsAgent : this.httpAgent  // Agent 적용
+    };
+
     return new Promise((resolve, reject) => {
-      const urlObj = new URL(url);
-      const isHttps = urlObj.protocol === 'https:';
-      const httpModule = isHttps ? https : http;
-
-      const options = {
-        hostname: urlObj.hostname,
-        port: urlObj.port || (isHttps ? 443 : 80),
-        path: urlObj.pathname + urlObj.search,
-        method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Code-Pattern-Analyzer/1.0',
-          'Connection': 'close',
-          ...headers
-        },
-        timeout: timeout,
-        keepAlive: false,
-        agent: false,
-      };
-
-      const requestData = data ? JSON.stringify(data) : null;
-      if (requestData) {
-        options.headers['Content-Length'] = Buffer.byteLength(requestData);
-      }
-
-      let timeoutId;
       const req = httpModule.request(options, (res) => {
-        let responseData = '';
+        let data = '';
 
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-
-        res.on('data', (chunk) => {
-          responseData += chunk;
+        res.on('data', chunk => {
+          data += chunk;
         });
 
         res.on('end', () => {
           try {
             if (res.statusCode >= 200 && res.statusCode < 300) {
-              const parsedResponse = JSON.parse(responseData);
-              resolve(parsedResponse);
+              resolve(JSON.parse(data));
             } else {
-              reject(new Error(`HTTP ${res.statusCode}: ${responseData.slice(0, 200)}`));
+              reject(new Error(`HTTP ${res.statusCode}: ${data}`));
             }
           } catch (parseError) {
             reject(new Error(`JSON 파싱 실패: ${parseError.message}`));
           }
         });
-
-        res.on('error', (error) => {
-          reject(new Error(`응답 처리 오류: ${error.message}`));
-        });
       });
 
-      timeoutId = setTimeout(() => {
+      req.on('timeout', () => {
         req.destroy();
-        reject(new Error(`요청 시간 초과 (${timeout}ms)`));
-      }, timeout);
+        reject(new Error('Request timeout'));
+      });
 
       req.on('error', (error) => {
-        if (timeoutId) clearTimeout(timeoutId);
-
-        if (error.code === 'ECONNRESET') {
-          reject(new Error('연결 재설정 (서버 과부하 가능성)'));
-        } else if (error.code === 'ECONNREFUSED') {
-          reject(new Error('연결 거부 (Ollama 서비스 확인 필요)'));
-        } else if (error.code === 'ETIMEDOUT') {
-          reject(new Error('연결 시간 초과'));
-        } else {
-          reject(new Error(`요청 실패: ${error.message}`));
-        }
+        reject(error);
       });
 
-      req.on('socket', (socket) => {
-        socket.on('error', (error) => {
-          if (timeoutId) clearTimeout(timeoutId);
-          reject(new Error(`소켓 오류: ${error.message}`));
-        });
-
-        socket.setTimeout(timeout, () => {
-          req.destroy();
-          reject(new Error('소켓 시간 초과'));
-        });
-      });
-
-      if (requestData) {
-        req.write(requestData);
+      if (body) {
+        req.write(JSON.stringify(body));
       }
 
       req.end();
@@ -492,22 +558,68 @@ export class LLMClient {
   }
 
   /**
-   * HTTP 요청 메서드 - makeHttpRequestStable을 호출하는 래퍼
+   * 간단한 HTTP 요청 처리 (연결 테스트용)
    */
-  async makeHttpRequest(url, method, data, headers = {}, timeout = 30000) {
-    return this.makeHttpRequestStable(url, method, data, headers, timeout);
+  async makeHttpRequest(url, method, body, headers, timeout) {
+    const parsedUrl = new URL(url);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const httpModule = isHttps ? https : http;
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: method,
+      headers: {
+        'Connection': 'keep-alive',  // Keep-Alive 명시적 요청
+        ...headers
+      },
+      timeout: timeout,
+      agent: isHttps ? this.httpsAgent : this.httpAgent  // Agent 적용
+    };
+
+    return new Promise((resolve, reject) => {
+      const req = httpModule.request(options, (res) => {
+        let data = '';
+
+        res.on('data', chunk => {
+          data += chunk;
+        });
+
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (error) {
+            resolve(data);
+          }
+        });
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
+      });
+
+      req.on('error', reject);
+
+      if (body) {
+        req.write(JSON.stringify(body));
+      }
+
+      req.end();
+    });
   }
 
   /**
-   * 프롬프트 길이에 따라 생성 토큰 수와 temperature 동적 조정
-   * 긴 프롬프트일수록 토큰 수 감소 및 temperature 낮춤
+   * 큰 요청에 대해 옵션 동적 조정
+   * 프롬프트 길이에 따라 토큰 수와 온도 조정
    */
   adjustOptionsForLargeRequest(prompt, options) {
-    const promptLength = prompt.length;
     const adjustedOptions = { ...options };
+    const promptLength = prompt.length;
 
     if (promptLength > 3000) {
-      adjustedOptions.num_predict = Math.min(adjustedOptions.num_predict || 2500, 2000);
+      adjustedOptions.num_predict = Math.min(adjustedOptions.num_predict || 2000, 1800);
     }
     if (promptLength > 5000) {
       adjustedOptions.num_predict = Math.min(adjustedOptions.num_predict || 2000, 1500);
@@ -533,7 +645,7 @@ export class LLMClient {
     } else if (error.message.includes('ECONNRESET')) {
       return '연결 재설정 (서버 과부하 가능성)';
     } else if (error.message.includes('ECONNREFUSED')) {
-      return '연결 거부 (Ollama 서비스 확인 필요)';
+      return '연결 거부 (서비스 확인 필요)';
     } else if (error.message.includes('ETIMEDOUT')) {
       return '연결 시간 초과';
     } else if (error.message.includes('timeout')) {
@@ -567,6 +679,8 @@ export class LLMClient {
       }
     } else if (this.config.provider === 'ollama') {
       cleaned = this.cleanOllamaResponse(cleaned);
+    } else if (this.config.provider === 'vllm') {
+      cleaned = this.cleanVllmResponse(cleaned);
     }
 
     return this.extractJSONFromText(cleaned);
@@ -624,6 +738,14 @@ export class LLMClient {
     let cleaned = response;
     cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '');
     return this.cleanCommonResponse(cleaned);
+  }
+
+  /**
+   * vLLM 응답 정제
+   * 공통 정제 처리 사용
+   */
+  cleanVllmResponse(response) {
+    return this.cleanCommonResponse(response);
   }
 
   /**

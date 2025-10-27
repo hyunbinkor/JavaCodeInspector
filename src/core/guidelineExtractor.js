@@ -1,18 +1,92 @@
+/**
+ * PDF 가이드라인 추출기 (GuidelineExtractor)
+ * 
+ * 금융권 개발 가이드 PDF에서 코딩 규칙을 추출하고 구조화하는 컴포넌트
+ * - PDF 텍스트 추출 (pdf2json 사용)
+ * - 정규식 기반 기본 파싱
+ * - vLLM 기반 심화 분석 및 구조화
+ * - Cast Operator 등 복잡한 규칙에 대한 커스텀 검증 지원
+ * 
+ * 추출 프로세스:
+ * 1. extractFromPDF() → PDF 파일 읽기 및 텍스트 추출
+ * 2. parseTextContent() → 목차 제거, 섹션 분리
+ * 3. parseSections() → 번호 기반 섹션 파싱 (2.1, 3.2.1 형식)
+ * 4. extractGuidelineFromSection() → 기본 가이드라인 추출
+ * 5. (옵션) enhanceGuidelinesWithLLM() → LLMService로 심화 분석
+ * 6. saveToJSON() → 구조화된 JSON 저장
+ * 
+ * 출력 형식 (JSON):
+ * {
+ *   "metadata": { "extractedAt", "totalRules", "version" },
+ *   "guidelines": [
+ *     {
+ *       "ruleId": "code_style.3_7_3",
+ *       "title": "Cast Operator 공백 규칙",
+ *       "description": "...",
+ *       "category": "code_style",
+ *       "checkType": "regex_with_validation",
+ *       "patterns": [...],
+ *       "severity": "LOW",
+ *       "examples": { "good": [...], "bad": [...] }
+ *     }
+ *   ]
+ * }
+ * 
+ * @module GuidelineExtractor
+ * @requires PDFParser - PDF 텍스트 추출 (pdf2json)
+ * @requires LLMService - vLLM 기반 규칙 구조화
+ * 
+ * # TODO: Node.js → Python 변환 (PyPDF2 또는 pdfplumber 사용)
+ * # TODO: PDFParser → pdfplumber.open() 변환
+ * # TODO: LLM 프롬프트 → Python 템플릿 (Jinja2)
+ * # NOTE: 금융권 PDF는 보안 제한 가능 (암호화, 복사 방지)
+ * # PERFORMANCE: 대용량 PDF (100+ 페이지) 메모리 최적화 필요
+ */
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import PDFParser from 'pdf2json';
 import { LLMService } from '../clients/llmService.js';
+import { saveJsonData } from '../utils/fileUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * PDF에서 코딩 가이드라인을 추출하고 구조화하는 클래스
- * - 기본 정규식 파싱과 LLM 기반 심화 분석을 결합
- * - Cast Operator와 같은 복잡한 규칙에 대한 커스텀 검증 지원
+ * PDF 가이드라인 추출기 클래스
+ * 
+ * 내부 구조:
+ * - guidelines: Array - 최종 추출된 가이드라인 배열
+ * - extractedText: string - PDF에서 추출한 전체 텍스트
+ * - seenSections: Map<sectionNumber, guideline> - 중복 섹션 방지용
+ * - llmService: LLMService 인스턴스 - LLM 기반 심화 분석
+ * - rawChunks: Array - LLM 처리 전 기본 추출 결과
+ * 
+ * 추출 전략:
+ * - 기본 추출: 정규식 + 섹션 번호 파싱 (빠름, 정확도 중간)
+ * - 심화 분석: vLLM 기반 구조화 (느림, 정확도 높음)
+ * - 하이브리드: 기본 추출 → LLM으로 보완 (권장)
+ * 
+ * @class
+ * 
+ * # TODO: Python 클래스 변환 (PyPDF2/pdfplumber 사용)
+ * # PERFORMANCE: 대용량 PDF 스트리밍 처리 (페이지별 청킹)
  */
 export class GuidelineExtractor {
+  /**
+   * 생성자: 추출기 초기화
+   * 
+   * 초기화 항목:
+   * 1. guidelines 빈 배열 생성
+   * 2. extractedText 빈 문자열 초기화
+   * 3. seenSections Map 생성 (중복 방지)
+   * 4. LLMService 인스턴스 생성
+   * 5. rawChunks 빈 배열 생성
+   * 
+   * @constructor
+   * 
+   * # NOTE: LLM 연결은 initialize() 호출 시 확인
+   */
   constructor() {
     this.guidelines = [];           // 최종 추출된 가이드라인 배열
     this.extractedText = '';         // PDF에서 추출한 전체 텍스트
@@ -38,9 +112,39 @@ export class GuidelineExtractor {
   }
 
   /**
-   * PDF 파일에서 텍스트를 추출하고 가이드라인 파싱 시작
-   * @param {string} pdfPath - PDF 파일 경로
+   * PDF 파일에서 텍스트 추출 및 가이드라인 파싱 시작
+   * 
+   * 내부 흐름:
+   * 1. fs.access() → PDF 파일 존재 확인
+   * 2. PDFParser.loadPDF() → PDF 파일 로드
+   * 3. 'pdfParser_dataReady' 이벤트 대기
+   * 4. pdfData.Pages 순회하며 각 페이지의 Texts 추출
+   * 5. decodeURIComponent() → URI 인코딩된 텍스트 디코딩
+   * 6. parseTextContent() 호출 → 텍스트 분석 및 가이드라인 추출
+   * 7. guidelines 배열 반환
+   * 
+   * 에러 처리:
+   * - 파일 없음: fs.access() 에러
+   * - PDF 파싱 실패: 'pdfParser_dataError' 이벤트
+   * - 텍스트 없음: fullText.length === 0 체크
+   * 
+   * @async
+   * @param {string} pdfPath - PDF 파일 경로 (절대 또는 상대 경로)
    * @returns {Promise<Array>} 추출된 가이드라인 배열
+   * @throws {Error} PDF 파일 접근 실패
+   * @throws {Error} PDF 파싱 실패
+   * @throws {Error} 텍스트 추출 불가
+   * 
+   * @example
+   * const extractor = new GuidelineExtractor();
+   * await extractor.initialize();
+   * const guidelines = await extractor.extractFromPDF('./coding_standards.pdf');
+   * console.log(`추출된 규칙: ${guidelines.length}개`);
+   * 
+   * # TODO: Python 변환 - pdfplumber.open() 사용
+   * # TODO: 에러 핸들링 강화 (재시도 로직, 상세 에러 메시지)
+   * # NOTE: PDF 보안 제한 시 에러 발생 가능 (암호화, DRM)
+   * # PERFORMANCE: 대용량 PDF는 페이지별 스트리밍 처리 권장
    */
   async extractFromPDF(pdfPath) {
     return new Promise(async (resolve, reject) => {
@@ -86,14 +190,6 @@ export class GuidelineExtractor {
             console.log(`텍스트 추출 완료 - 총 ${fullText.length}자`);
             this.extractedText = fullText;
 
-            // 디버깅을 위한 추출 텍스트 저장
-            try {
-              await fs.writeFile('extracted_text_debug.txt', fullText, 'utf-8');
-              console.log('디버깅용 텍스트 파일 저장: extracted_text_debug.txt\n');
-            } catch (e) {
-              console.log('디버그 파일 저장 실패 (무시)\n');
-            }
-
             if (fullText.length === 0) {
               reject(new Error('PDF에서 텍스트를 추출할 수 없습니다.'));
               return;
@@ -119,11 +215,36 @@ export class GuidelineExtractor {
   }
 
   /**
-   * 추출된 텍스트를 분석하여 섹션으로 분리하고 가이드라인 생성
-   * 1. 목차 제거 (본문 시작점 탐지)
-   * 2. 섹션 파싱 (번호 기반)
-   * 3. 기본 가이드라인 추출
-   * 4. LLM 심화 분석 (가능한 경우)
+   * 추출된 텍스트 분석 및 섹션 파싱
+   * 
+   * 내부 흐름:
+   * 1. 공백 정규화 (여러 공백 → 하나로 통일)
+   * 2. 목차 제거:
+   *    a. "2. 명명 규칙" + "2.1. 서비스" 패턴으로 본문 시작점 탐지
+   *    b. 또는 "설계 단계" 마커로 fallback
+   * 3. parseSections() → 번호 기반 섹션 분리 (2.1, 3.2.1 형식)
+   * 4. 각 섹션에 대해:
+   *    a. extractGuidelineFromSection() → 기본 가이드라인 추출
+   *    b. isValidGuideline() → 유효성 검증
+   *    c. rawChunks에 추가 (LLM 처리 대기)
+   * 5. (LLM 사용 시) enhanceGuidelinesWithLLM() → 심화 분석 및 구조화
+   * 6. (LLM 미사용 시) rawChunks의 basicGuideline을 guidelines에 저장
+   * 
+   * 목차 제거 전략:
+   * - Primary: "2. 명명 규칙" 다음 "2.1. 서비스" 패턴
+   * - Fallback: "설계 단계 명명규칙 및 코딩표준" 문자열 검색
+   * 
+   * 섹션 파싱 규칙:
+   * - 번호 형식: N.N, N.N.N, N.N.N.N (예: 2.1, 3.2.1, 3.3.1.1)
+   * - 각 섹션은 다음 섹션 번호 또는 EOF까지
+   * 
+   * @async
+   * @param {string} text - PDF에서 추출한 전체 텍스트
+   * @returns {Promise<void>} guidelines 배열에 결과 저장
+   * 
+   * # TODO: Python 변환 - 정규식 re 모듈 사용
+   * # PERFORMANCE: 섹션 파싱을 멀티프로세싱으로 병렬화
+   * # NOTE: 목차 제거 실패 시 전체 텍스트 파싱 (노이즈 증가)
    */
   async parseTextContent(text) {
     console.log('텍스트 분석 시작...\n');
@@ -913,8 +1034,7 @@ ${castOperatorGuidance}
         guidelines: this.guidelines
       };
 
-      const jsonData = JSON.stringify(outputData, null, 2);
-      await fs.writeFile(outputPath, jsonData, 'utf-8');
+      await saveJsonData(outputData, outputPath, 'rule');
 
       console.log(`\n저장 완료: ${outputPath}`);
       console.log(`추출된 가이드라인: ${this.guidelines.length}개`);

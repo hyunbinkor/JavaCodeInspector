@@ -208,25 +208,25 @@ npm start -- batch -i examples -o output
 **1. 통합 검사 (권장)**
 ```bash
 # 전체 통합 검사 (패턴 + 가이드라인)
-npm start -- check -c examples/test_code.java -o report.json
+npm start -- check -c test_code.java -o report.json
 ```
 
 **2. 가이드라인 전용 검사**
 ```bash
 # 가이드라인 검사
-npm start -- check-guidelines -c examples/guide_test_code.java
+npm start -- check-guidelines -c guide_test_code.java
 
 # 가이드라인 검사 및 수정안 생성
-npm start -- check-guidelines -c examples/guide_test_code.java --fix -o result.json
+npm start -- check-guidelines -c guide_test_code.java --fix -o result.json
 ```
 
 **3. 패턴 검색 및 분석**
 ```bash
 # 패턴 검사
-npm start -- search -c examples/test_code.java -l 5
+npm start -- search -c test_code.java -l 5
 
 # 패턴 검사 및 수정안 생성
-npm start -- search -c examples/test_code.java -l 5 --fix -o result.json
+npm start -- search -c test_code.java -l 5 --fix -o result.json
 ```
 
 **4. PDF 가이드 추출**
@@ -246,10 +246,10 @@ npm start -- import-guidelines -i extracted_rules.json
 
 **6. 시스템 상태 확인**
 ```bash
-node main.js status
+npm start -- status
 ```
 
-**d**
+**7. weviate 콘솔**
 ```bash
 # vector admin
 git clone https://github.com/Mintplex-Labs/vector-admin.git

@@ -1,15 +1,88 @@
+/**
+ * 동적 안전 패턴 분석기 (DynamicSafePatternAnalyzer)
+ * 
+ * VectorDB 기반 동적 패턴 로딩 및 코드 분석
+ * - 안전한 구현 패턴 vs 문제 있는 안티패턴 분류
+ * - 실시간 패턴 로드 및 캐싱
+ * - 카테고리별 패턴 매칭 및 이슈 탐지
+ * 
+ * 핵심 기능:
+ * 1. VectorDB에서 패턴 로드 (Weaviate/Qdrant)
+ * 2. 안전/위험 패턴 분류 및 캐싱
+ * 3. 소스 코드에서 패턴 매칭
+ * 4. 카테고리별 특화 검사 (리소스, 보안, 성능, 예외 처리)
+ * 5. 권장사항 자동 생성
+ * 
+ * 패턴 구조 (VectorDB 스키마):
+ * {
+ *   "category": "resource_management",
+ *   "recommended_pattern": {
+ *     "code_template": "try-with-resources 코드",
+ *     "pattern_name": "auto_resource_management",
+ *     "implementation_guide": {
+ *       "best_practices": [...],
+ *       "framework_specific_notes": [...]
+ *     }
+ *   },
+ *   "anti_pattern": {
+ *     "code_template": "문제 있는 코드",
+ *     "pattern_signature": {
+ *       "semantic_signature": [...키워드...],
+ *       "regex_patterns": [...]
+ *     },
+ *     "problematic_characteristics": {...}
+ *   }
+ * }
+ * 
+ * 분석 카테고리:
+ * - resource_management: 리소스 누수 (Connection, Stream 등)
+ * - security_vulnerability: SQL Injection, XSS 등
+ * - performance_issue: N+1 쿼리, 비효율 루프 등
+ * - exception_handling: 예외 무시, printStackTrace() 사용 등
+ * - code_smell: 긴 메서드, 중복 코드 등
+ * 
+ * 호출 체인:
+ * 1. initialize() → loadAndClassifyPatterns() → VectorClient.getAllPatterns()
+ * 2. checkForSafePracticesDynamic() → 안전한 패턴 탐지
+ * 3. classifySimilarPatterns() → 패턴 분류
+ * 4. findIssuesUsingDynamicPatterns() → 이슈 위치 탐지
+ * 5. performCategorySpecificMatching() → 카테고리별 특화 검사
+ * 6. generateRecommendations() → 권장사항 생성
+ * 
+ * @module DynamicSafePatternAnalyzer
+ * @requires JavaASTParser - Java AST 파싱
+ * @requires LLMService - vLLM 기반 분석
+ * @requires VectorClient - Qdrant/Weaviate VectorDB 연동
+ */
 import { JavaASTParser } from '../ast/javaAstParser.js';
 import { LLMService } from '../clients/llmService.js';
 import { VectorClient } from '../clients/vectorClient.js';
 import { config } from '../config.js';
 
 /**
- * 동적 안전 패턴 분석기
- * VectorDB에 저장된 코드 패턴을 로드하여
- * 안전한 구현 패턴과 문제가 있는 안티패턴으로 분류하고,
- * 소스 코드 분석 시 이를 활용하여 이슈를 탐지하고 권장사항을 제시
+ * 동적 안전 패턴 분석기 클래스
+ * 
+ * 내부 구조:
+ * - astParser: JavaASTParser 인스턴스
+ * - llmService: LLMService 인스턴스
+ * - vectorClient: VectorClient 인스턴스
+ * - safePatternCache: Map<category, pattern> - 안전한 패턴 캐시
+ * - antiPatternCache: Map<uniqueKey, pattern> - 문제 패턴 캐시
+ * 
+ * 생명주기:
+ * 1. new DynamicSafePatternAnalyzer()
+ * 2. await initialize() - VectorDB 패턴 로드 및 분류
+ * 3. checkForSafePracticesDynamic() / findIssuesUsingDynamicPatterns() - 반복 호출
+ * 4. (필요 시) refreshPatternCache() - 패턴 갱신
+ * 
+ * @class
  */
 export class DynamicSafePatternAnalyzer {
+  /**
+   * 생성자: 분석기 및 캐시 초기화
+   * 
+   * @constructor
+   */
   constructor() {
     this.astParser = new JavaASTParser();
     this.llmService = new LLMService();
@@ -18,6 +91,26 @@ export class DynamicSafePatternAnalyzer {
     this.antiPatternCache = new Map(); // 문제 패턴 저장 (uniqueKey -> pattern)
   }
 
+  /**
+   * 동적 패턴 분석기 초기화
+   * 
+   * 내부 흐름:
+   * 1. LLMService.checkConnection() → vLLM 서비스 연결 확인
+   * 2. loadAndClassifyPatterns() 호출
+   * 3. VectorClient.getAllPatterns() → 모든 패턴 조회
+   * 4. normalizePatternFields() → 필드명 정규화
+   * 5. recommended_pattern 있으면 safePatternCache에 저장
+   * 6. anti_pattern 있으면 antiPatternCache에 저장
+   * 7. 캐시 크기 및 패턴 목록 출력
+   * 
+   * @async
+   * @returns {Promise<void>}
+   * @throws {Error} LLM 서비스 연결 실패 시
+   * 
+   * @example
+   * const analyzer = new DynamicSafePatternAnalyzer();
+   * await analyzer.initialize();
+   */
   async initialize() {
     console.log('🚀 동적 패턴 분석기 초기화 중...');
 
@@ -35,8 +128,23 @@ export class DynamicSafePatternAnalyzer {
   }
 
   /**
-   * Weaviate 스키마의 다양한 필드명 형식을 정규화
-   * (snake_case, camelCase, properties 래핑 등 모두 처리)
+   * Weaviate 스키마 필드명 정규화
+   * 
+   * Weaviate/Qdrant는 필드명을 다양한 형태로 반환할 수 있음:
+   * - snake_case: issue_record_id
+   * - camelCase: issueRecordId
+   * - properties 래핑: { properties: { field: value } }
+   * 
+   * 이 메서드는 모든 형태를 통일된 형태로 변환
+   * 
+   * @param {Object} raw - VectorDB에서 조회한 원본 패턴 객체
+   * @returns {Object} 정규화된 필드 객체
+   * @returns {string} return.issueRecordId - 패턴 고유 ID
+   * @returns {string} return.title - 패턴 제목
+   * @returns {string} return.category - 카테고리
+   * @returns {Object} return.recommended - 안전한 패턴 정보
+   * @returns {Object} return.anti - 문제 패턴 정보
+   * @returns {Object} return.raw - 원본 객체 (디버깅용)
    */
   normalizePatternFields(raw) {
     const p = raw || {};
@@ -64,9 +172,23 @@ export class DynamicSafePatternAnalyzer {
   }
 
   /**
-   * VectorDB에서 모든 패턴을 조회하여
-   * recommended_pattern이 있으면 안전한 패턴 캐시에,
-   * anti_pattern이 있으면 문제 패턴 캐시에 분류하여 저장
+   * VectorDB에서 모든 패턴 로드 및 분류
+   * 
+   * 내부 흐름:
+   * 1. VectorClient.getAllPatterns() → 전체 패턴 조회
+   * 2. 각 패턴에 대해 루프:
+   *    a. normalizePatternFields() → 필드명 정규화
+   *    b. recommended_pattern.code_template 존재 시:
+   *       - extractSafePattern() → 안전한 패턴 추출
+   *       - safePatternCache.set() → 캐시에 저장
+   *    c. anti_pattern.code_template 존재 시:
+   *       - extractAntiPattern() → 문제 패턴 추출
+   *       - antiPatternCache.set() → 캐시에 저장
+   * 3. 분류 결과 통계 출력
+   * 4. (실패 시) initializeFallbackPatterns() → 기본 패턴 사용
+   * 
+   * @async
+   * @returns {Promise<void>}
    */
   async loadAndClassifyPatterns() {
     try {
@@ -119,14 +241,29 @@ export class DynamicSafePatternAnalyzer {
       }
 
     } catch (error) {
+      // 로드 실패 시 기본 패턴으로 폴백
       console.warn('⚠️ 패턴 로드 실패, 기본 패턴 사용:', error.message);
       this.initializeFallbackPatterns();
     }
   }
 
   /**
-   * recommended_pattern 객체에서 안전한 구현 정보를 추출하여
-   * 탐지 규칙, 시그니처, 베스트 프랙티스 등을 포함한 객체로 변환
+   * 안전한 패턴 정보 추출 및 구조화
+   * 
+   * 추출 항목:
+   * 1. category: 패턴 카테고리
+   * 2. patternName: 패턴 이름
+   * 3. codeTemplate: 권장 코드 템플릿
+   * 4. detectionRules: 탐지 규칙 (generateDetectionRules로 생성)
+   * 5. bestPractices: 베스트 프랙티스 목록
+   * 6. frameworkNotes: 프레임워크별 노트
+   * 7. signatures: 패턴 시그니처 (키워드, 정규식, 구조)
+   * 
+   * @param {Object} pattern - VectorDB의 패턴 객체
+   * @param {string} pattern.category - 카테고리
+   * @param {Object} pattern.recommended_pattern - 안전한 패턴 정보
+   * @param {Object} pattern.metadata - 메타데이터
+   * @returns {Object|null} 구조화된 안전한 패턴 객체
    */
   extractSafePattern(pattern) {
     const recommendedPattern = pattern.recommended_pattern;
@@ -150,8 +287,21 @@ export class DynamicSafePatternAnalyzer {
   }
 
   /**
-   * anti_pattern 객체에서 문제가 있는 구현 정보를 추출하여
-   * 시그니처와 문제점 특성을 포함한 객체로 변환
+   * 문제 패턴 정보 추출 및 구조화
+   * 
+   * 추출 항목:
+   * 1. category: 패턴 카테고리
+   * 2. title: 패턴 제목
+   * 3. codeTemplate: 문제 코드 템플릿
+   * 4. severity: 심각도 (CRITICAL/HIGH/MEDIUM/LOW)
+   * 5. signatures: 패턴 시그니처 (탐지용)
+   * 6. problematicCharacteristics: 문제 특성
+   * 
+   * @param {Object} pattern - VectorDB의 패턴 객체
+   * @param {string} pattern.category - 카테고리
+   * @param {Object} pattern.anti_pattern - 문제 패턴 정보
+   * @param {Object} pattern.metadata - 메타데이터
+   * @returns {Object|null} 구조화된 문제 패턴 객체
    */
   extractAntiPattern(pattern) {
     const antiPattern = pattern.anti_pattern;
@@ -172,8 +322,32 @@ export class DynamicSafePatternAnalyzer {
   }
 
   /**
-   * 코드 템플릿과 카테고리를 분석하여
-   * 패턴 매칭에 사용할 키워드, 정규식, 구조적 특징을 추출
+   * 코드 템플릿에서 패턴 시그니처 추출
+   * 
+   * 카테고리별 시그니처 추출 전략:
+   * 
+   * 1. resource_management:
+   *    - keywords: try-with-resources, Connection, close(), finally
+   *    - patterns: try\s*\([^)]*Connection, \.close\s*\(\)
+   * 
+   * 2. security_vulnerability:
+   *    - keywords: PreparedStatement, setString, parameterized
+   *    - patterns: PreparedStatement.*setString, \?
+   * 
+   * 3. performance_issue:
+   *    - keywords: JOIN, batch, IN \(, ArrayList
+   *    - patterns: JOIN, IN\s*\([^)]*\?
+   * 
+   * 4. exception_handling:
+   *    - keywords: logger, catch, @Transactional
+   *    - patterns: logger\.(error|warn), catch\s*\([^)]*Exception
+   * 
+   * @param {string} codeTemplate - 코드 템플릿
+   * @param {string} category - 카테고리
+   * @returns {Object} 패턴 시그니처
+   * @returns {Array} return.keywords - 추출된 키워드
+   * @returns {Array} return.patterns - 정규식 패턴
+   * @returns {Array} return.structures - 구조적 특징
    */
   extractPatternSignatures(codeTemplate, category) {
     const signatures = {
@@ -235,8 +409,17 @@ export class DynamicSafePatternAnalyzer {
   }
 
   /**
-   * 코드 템플릿에서 주어진 키워드 패턴들과 매칭되는 모든 키워드를 추출
-   * (정규식 패턴 리스트를 순회하며 매칭 수행, 중복 제거)
+   * 코드 템플릿에서 키워드 추출
+   * 
+   * 추출 프로세스:
+   * 1. keywordPatterns 배열의 각 정규식 패턴 순회
+   * 2. codeTemplate에서 패턴 매칭
+   * 3. 매칭된 키워드를 배열에 추가
+   * 4. 중복 제거 후 반환
+   * 
+   * @param {string} codeTemplate - 코드 템플릿
+   * @param {Array<string>} keywordPatterns - 정규식 패턴 배열
+   * @returns {Array<string>} 추출된 고유 키워드 배열
    */
   extractKeywords(codeTemplate, keywordPatterns) {
     const keywords = [];
@@ -247,14 +430,14 @@ export class DynamicSafePatternAnalyzer {
         keywords.push(...matches);
       }
     });
+    // 중복 제거
     return [...new Set(keywords)];
   }
-
   /**
-   * recommended_pattern의 code_template을 분석하여
-   * 실제 코드에서 이 패턴을 탐지하기 위한 정규식 기반 규칙을 생성
-   * (try-with-resources, PreparedStatement, JOIN, logger 사용 등)
-   */
+     * recommended_pattern의 code_template을 분석하여
+     * 실제 코드에서 이 패턴을 탐지하기 위한 정규식 기반 규칙을 생성
+     * (try-with-resources, PreparedStatement, JOIN, logger 사용 등)
+     */
   generateDetectionRules(recommendedPattern, category) {
     const rules = [];
 

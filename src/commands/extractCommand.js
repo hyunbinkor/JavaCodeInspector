@@ -1,7 +1,3 @@
-/**
- * PDF에서 가이드라인 추출 명령어
- */
-
 import fs from 'fs/promises';
 import path from 'path';
 import { GuidelineExtractor } from '../core/guidelineExtractor.js';

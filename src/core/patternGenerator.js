@@ -1,8 +1,101 @@
+/**
+ * 패턴 데이터셋 생성기 (PatternDatasetGenerator)
+ * 
+ * 이슈 코드를 분석하여 VectorDB 저장용 패턴 데이터셋 생성
+ * - 안티패턴 + 권장패턴 쌍 생성
+ * - 다차원 임베딩 벡터 생성 (480차원)
+ * - 프레임워크 컨텍스트 분석
+ * - 관련 패턴 유사도 계산
+ * 
+ * 패턴 생성 프로세스 (6단계):
+ * 1. generateBasicPatternWithLLM() → LLM으로 기본 패턴 생성
+ *    - anti_pattern: 문제 있는 코드 템플릿
+ *    - recommended_pattern: 권장 코드 템플릿
+ *    - impact_analysis: 영향 분석
+ * 
+ * 2. extractAndAnalyzeFrameworkContext() → 프레임워크 분석
+ *    - extractAnnotations() → @Annotation 추출
+ *    - extractCustomClasses() → 커스텀 클래스 추출
+ *    - LLMClient.generateFrameworkAnalysis() → 탐지 규칙 생성
+ * 
+ * 3. analyzeRelatedPatterns() → 기존 패턴과 유사도 계산
+ *    - calculatePatternSimilarity() → 카테고리 기반 유사도
+ *    - determineRelationshipType() → 관계 타입 결정
+ * 
+ * 4. generateEmbeddings() → 480차원 임베딩 생성
+ *    - embedAstStructure() → 구문적 임베딩 (128차원)
+ *    - embedCodeSemantics() → 의미론적 임베딩 (256차원)
+ *    - embedFrameworkUsage() → 프레임워크 임베딩 (64차원)
+ *    - embedBusinessContext() → 비즈니스 임베딩 (32차원)
+ *    - combineEmbeddings() → 480차원 통합
+ * 
+ * 5. combineFinalDataset() → 최종 데이터셋 조합
+ *    - issue_record_id 생성 (CATEGORY_timestamp_random)
+ *    - metadata, anti_pattern, recommended_pattern 병합
+ *    - framework_context, related_patterns, embeddings 추가
+ * 
+ * 6. validateAndEnhanceDataset() → 검증 및 품질 점수 계산
+ *    - 필수 필드 검증
+ *    - 품질 점수 계산 (0.0 ~ 1.0)
+ *    - VectorClient.storePattern() → VectorDB 저장
+ * 
+ * 임베딩 벡터 구조 (480차원):
+ * - syntactic_embedding: 128차원 (AST 구조)
+ * - semantic_embedding: 256차원 (코드 의미)
+ * - framework_embedding: 64차원 (프레임워크 사용)
+ * - context_embedding: 32차원 (비즈니스 컨텍스트)
+ * 
+ * 품질 점수 기준:
+ * - metadata.title 존재: +0.1
+ * - anti_pattern.code_template 존재: +0.1
+ * - recommended_pattern.code_template 존재: +0.1
+ * - embeddings.combined_embedding 존재: +0.2
+ * - framework_context 존재: +0.1
+ * - impact_analysis 존재: +0.1
+ * - detection_rules 존재: +0.1
+ * - related_patterns 존재: +0.1
+ * - validation_status 존재: +0.05
+ * - issue_record_id 존재: +0.05
+ * → 최대 1.0
+ * 
+ * @module PatternDatasetGenerator
+ * @requires CodeEmbeddingGenerator - 코드 임베딩 생성
+ * @requires LLMClient - vLLM 기반 패턴 분석
+ * @requires VectorClient - Qdrant/Weaviate 저장
+ * 
+ * # TODO: Node.js → Python 변환 (FastAPI + Pydantic)
+ * # TODO: uuid → Python uuid4
+ * # TODO: CodeEmbeddingGenerator → Python 임베딩 생성기
+ * # TODO: LLMClient → vLLM Python SDK
+ * # NOTE: 임베딩 차원 검증 필수 (128+256+64+32=480)
+ * # NOTE: NaN, Infinity 체크 필수 (벡터 품질 보장)
+ * # PERFORMANCE: 임베딩 생성 병렬화 (asyncio.gather)
+ * # PERFORMANCE: 대량 패턴 저장 시 배치 upsert
+ */
 import { v4 as uuidv4 } from 'uuid';
 import { CodeEmbeddingGenerator } from '../embeddings/codeEmbedding.js';
 import { LLMClient } from '../clients/llmClient.js';
 import { VectorClient } from '../clients/vectorClient.js';
 
+/**
+ * 패턴 데이터셋 생성기 클래스
+ * 
+ * 내부 구조:
+ * - llmClient: LLMClient 인스턴스 (패턴 분석)
+ * - vectorClient: VectorClient 인스턴스 (VectorDB 저장)
+ * - embeddingGenerator: CodeEmbeddingGenerator 인스턴스 (임베딩 생성)
+ * - existingPatterns: Array - 기존 패턴 목록 (유사도 비교용)
+ * 
+ * 생명주기:
+ * 1. new PatternDatasetGenerator()
+ * 2. await initialize() - LLM/VectorDB 연결 및 기존 패턴 로드
+ * 3. await generatePatternDataset(issueData) - 패턴 생성 및 저장
+ * 
+ * @class
+ * 
+ * # TODO: Python 클래스 변환 시 타입 힌팅 추가
+ * # PERFORMANCE: existingPatterns 캐싱 (1시간 TTL)
+ */
 export class PatternDatasetGenerator {
   constructor() {
     this.llmClient = new LLMClient();

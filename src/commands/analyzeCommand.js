@@ -1,16 +1,15 @@
-/**
- * 단일 이슈 분석 및 패턴 데이터셋 생성 명령어
- */
-
 import { PatternDatasetGenerator } from '../core/patternGenerator.js';
-import { loadIssueData, savePatternDataset } from '../utils/fileUtils.js';
+import { loadData, saveJsonData } from '../utils/fileUtils.js';
 
 /**
  * 단일 이슈 분석 및 패턴 데이터셋 생성
- * 1. JSON 파일에서 이슈 데이터 로드
- * 2. PatternDatasetGenerator로 코드 임베딩 생성
- * 3. 품질 검증 수행
- * 4. 패턴 데이터셋 JSON으로 저장
+ * 
+ * 내부 흐름:
+ * 1. 입력 JSON 파일에서 이슈 정보 로드
+ * 2. IssueCodeAnalyzer로 이슈 코드 분석
+ * 3. PatternDatasetGenerator로 패턴 데이터셋 생성
+ * 4. CodeEmbeddingGenerator로 벡터 생성
+ * 5. 생성된 패턴을 JSON 파일로 저장
  */
 export async function processSingleIssue(options) {
   if (!options.input) {
@@ -21,7 +20,7 @@ export async function processSingleIssue(options) {
   console.log('단일 이슈 분석 시작');
   console.log(`입력 파일: ${options.input}`);
 
-  const issueData = await loadIssueData(options.input);
+  const issueData = await loadData(options.input, 'issueRaw');
   const generator = new PatternDatasetGenerator();
   await generator.initialize();
 
@@ -29,7 +28,7 @@ export async function processSingleIssue(options) {
   const patternDataset = await generator.generatePatternDataset(issueData);
 
   if (options.output) {
-    await savePatternDataset(patternDataset, options.output);
+    await saveJsonData(patternDataset, options.output, 'issuePattern');
     console.log(`결과 저장: ${options.output}`);
   } else {
     console.log('\n생성된 패턴 데이터셋:');

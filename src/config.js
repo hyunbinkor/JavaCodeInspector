@@ -76,6 +76,15 @@ export const config = {
       keepAliveTimeout: parseInt(process.env.OLLAMA_KEEPALIVE_TIMEOUT) || 30000          // Keep-Alive 타임아웃
     },
     
+    // vLLM 설정
+    vllm: {
+      baseUrl: process.env.VLLM_BASE_URL || 'http://localhost:8000',
+      model: process.env.VLLM_MODEL || 'meta-llama/Llama-3.1-70B-Instruct',
+      maxTokens: parseInt(process.env.VLLM_MAX_TOKENS || '4000', 10),
+      temperature: parseFloat(process.env.VLLM_TEMPERATURE || '0.1'),
+      timeout: parseInt(process.env.VLLM_TIMEOUT || '180000', 10)
+    },
+
     // 공통 설정 (안정성 강화)
     maxRetries: parseInt(process.env.LLM_MAX_RETRIES) || 2,
     maxContinuationAttempts: parseInt(process.env.LLM_MAX_CONTINUATION_ATTEMPTS) || 5,
@@ -150,7 +159,7 @@ export function validateConfig() {
   const errors = [];
   
   // LLM 제공자 검증
-  if (!['ollama', 'bedrock'].includes(config.llm.provider)) {
+  if (!['ollama', 'bedrock', 'vllm'].includes(config.llm.provider)) {
     errors.push(`지원하지 않는 LLM 제공자: ${config.llm.provider}`);
   }
   

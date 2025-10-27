@@ -1,7 +1,3 @@
-/**
- * 시스템 상태 확인 명령어
- */
-
 import { UnifiedJavaCodeChecker } from '../core/unifiedCodeChecker.js';
 import { VectorClient } from '../clients/vectorClient.js';
 

@@ -5,6 +5,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { VectorClient } from '../clients/vectorClient.js';
+import { loadData } from '../utils/fileUtils.js';
 
 /**
  * 가이드라인 JSON을 VectorDB에 import
@@ -32,7 +33,7 @@ export async function importGuidelinesToVectorDB(options) {
   console.log('\n📖 가이드라인 JSON 파일 로딩 중...');
   let guidelineData;
   try {
-    const fileContent = await fs.readFile(inputPath, 'utf-8');
+    const fileContent = await loadData(inputPath, 'rule');
     guidelineData = JSON.parse(fileContent);
     console.log('✅ JSON 파싱 완료');
   } catch (error) {

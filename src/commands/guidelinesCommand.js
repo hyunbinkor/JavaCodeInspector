@@ -1,15 +1,16 @@
 /**
  * 가이드라인 규칙 관리 명령어
  */
-
-import fs from 'fs/promises';
 import { UnifiedJavaCodeChecker } from '../core/unifiedCodeChecker.js';
+import { loadData, saveJsonData } from '../utils/fileUtils.js';
 
 /**
  * 가이드라인 규칙 관리
- * --import: 텍스트 파일에서 가이드라인 파싱 후 VectorDB에 저장
- * --list: 저장된 정적/맥락적 규칙 목록 출력
- * --export: 모든 규칙을 JSON 파일로 내보내기
+ * 
+ * 내부 흐름:
+ * 1. import: 텍스트 파일 → JSON 파싱 → 가이드라인 저장소 저장
+ * 2. list: 저장소에서 가이드라인 목록 조회 → 콘솔 출력
+ * 3. export: 가이드라인 저장소 → JSON 직렬화 → 파일 저장
  */
 export async function manageGuidelines(options) {
   const unifiedChecker = new UnifiedJavaCodeChecker();
@@ -17,7 +18,7 @@ export async function manageGuidelines(options) {
 
   if (options.import) {
     console.log(`가이드라인 가져오기: ${options.import}`);
-    const guidelineText = await fs.readFile(options.import, 'utf-8');
+    const guidelineText = await loadData(options.import, 'rule');
 
     // 텍스트를 파싱하여 구조화된 규칙으로 변환 후 VectorDB에 저장
     await unifiedChecker.guidelineChecker.importGuidelineText(guidelineText);
@@ -46,7 +47,7 @@ export async function manageGuidelines(options) {
       contextualRules: Array.from(unifiedChecker.guidelineChecker.contextualRules.values())
     };
 
-    await fs.writeFile(options.export, JSON.stringify(allRules, null, 2));
+    await saveJsonData(allRules, options.export, 'rule');
     console.log('가이드라인 내보내기 완료');
   } else {
     console.log('옵션을 지정해주세요: --import, --list, --export 중 하나');
