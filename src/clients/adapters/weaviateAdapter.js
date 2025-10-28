@@ -1,6 +1,7 @@
 import weaviate, { ApiKey } from 'weaviate-ts-client';
 import { config } from '../../config.js';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../../utils/loggerUtils.js'
 
 /**
  * Weaviate Vector DB Adapter
@@ -25,9 +26,9 @@ export class WeaviateAdapter {
     // API 키가 설정되어 있고, useAuth가 true이며, 로컬 환경이 아닌 경우에만 API 키 인증 적용
     if (weaviateConfig.apiKey && weaviateConfig.useAuth && !isLocal) {
       clientConfig.apiKey = new ApiKey(weaviateConfig.apiKey);
-      console.log('🔐 API Key 인증 사용');
+      logger.info('🔐 API Key 인증 사용');
     } else {
-      console.log('🔓 익명 접근 모드 (로컬 환경)');
+      logger.info('🔓 익명 접근 모드 (로컬 환경)');
     }
 
     return weaviate.client(clientConfig);
@@ -40,7 +41,7 @@ export class WeaviateAdapter {
 
       // CodePattern 스키마 처리
       if (existingClasses.includes(this.codePatternClassName)) {
-        console.log(`✅ 기존 ${this.codePatternClassName} 스키마 확인됨`);
+        logger.info(`✅ 기존 ${this.codePatternClassName} 스키마 확인됨`);
         const existingSchema = schema.classes.find(c => c.class === this.codePatternClassName);
         const isCompatible = this.validateSchemaCompatibility(existingSchema);
 
@@ -49,23 +50,23 @@ export class WeaviateAdapter {
           console.warn('⚠️ 데이터 손실 방지를 위해 스키마 삭제하지 않음');
         }
       } else {
-        console.log(`🔨 ${this.codePatternClassName} 스키마 생성 중...`);
+        logger.info(`🔨 ${this.codePatternClassName} 스키마 생성 중...`);
         await this.createCodePatternSchema();
-        console.log(`✅ ${this.codePatternClassName} 스키마 생성 완료`);
+        logger.info(`✅ ${this.codePatternClassName} 스키마 생성 완료`);
       }
 
       // CodingGuideline 스키마 처리
       if (existingClasses.includes(this.guidelineClassName)) {
-        console.log(`✅ 기존 ${this.guidelineClassName} 스키마 확인됨`);
+        logger.info(`✅ 기존 ${this.guidelineClassName} 스키마 확인됨`);
       } else {
-        console.log(`🔨 ${this.guidelineClassName} 스키마 생성 중...`);
+        logger.info(`🔨 ${this.guidelineClassName} 스키마 생성 중...`);
         await this.createCodingGuidelineSchema();
-        console.log(`✅ ${this.guidelineClassName} 스키마 생성 완료`);
+        logger.info(`✅ ${this.guidelineClassName} 스키마 생성 완료`);
       }
 
-      console.log('✅ 모든 스키마 초기화 완료');
+      logger.info('✅ 모든 스키마 초기화 완료');
     } catch (error) {
-      console.error('❌ 스키마 초기화 실패:', error.message);
+      logger.error('❌ 스키마 초기화 실패:', error.message);
       throw error;
     }
   }
@@ -170,9 +171,9 @@ export class WeaviateAdapter {
         .withVector(dataset.embeddings?.combined_embedding || undefined)
         .do();
 
-      console.log(`✅ 패턴 저장 완료: ${dataset.issue_record_id}`);
+      logger.info(`✅ 패턴 저장 완료: ${dataset.issue_record_id}`);
     } catch (error) {
-      console.error(`패턴 저장 오류 (${dataset.issue_record_id}):`, error.message);
+      logger.error(`패턴 저장 오류 (${dataset.issue_record_id}):`, error.message);
       throw error;
     }
   }
@@ -183,7 +184,7 @@ export class WeaviateAdapter {
         .get()
         .withClassName(this.codePatternClassName)
         .withFields('issueRecordId title category severity semanticSignature qualityScore astSignature cyclomaticComplexity maxDepth patternData')
-        .withNearVector({ vector: queryVector, certainty: threshold })
+        .withNearVector({ vector: queryVector, distance: 1 - threshold })
         .withLimit(limit)
         .do();
 
@@ -202,7 +203,7 @@ export class WeaviateAdapter {
         fullData: JSON.parse(pattern.patternData || '{}')
       }));
     } catch (error) {
-      console.error('유사 패턴 검색 오류:', error.message);
+      logger.error('유사 패턴 검색 오류:', error.message);
       return [];
     }
   }
@@ -218,7 +219,7 @@ export class WeaviateAdapter {
 
       return result.data?.Get?.[this.codePatternClassName] || [];
     } catch (error) {
-      console.error('전체 패턴 조회 오류:', error.message);
+      logger.error('전체 패턴 조회 오류:', error.message);
       return [];
     }
   }
@@ -256,10 +257,10 @@ export class WeaviateAdapter {
         .withProperties(props)
         .do();
 
-      console.log(`✅ 가이드라인 저장 완료: ${guideline.ruleId}`);
+      logger.info(`✅ 가이드라인 저장 완료: ${guideline.ruleId}`);
       return id;
     } catch (error) {
-      console.error(`가이드라인 저장 오류 (${guideline.ruleId}):`, error.message);
+      logger.error(`가이드라인 저장 오류 (${guideline.ruleId}):`, error.message);
       throw error;
     }
   }
@@ -300,7 +301,7 @@ export class WeaviateAdapter {
         isActive: g.isActive
       }));
     } catch (error) {
-      console.error('가이드라인 검색 오류:', error.message);
+      logger.error('가이드라인 검색 오류:', error.message);
       return [];
     }
   }
@@ -336,7 +337,7 @@ export class WeaviateAdapter {
         message: g.message
       }));
     } catch (error) {
-      console.error('키워드 기반 가이드라인 검색 오류:', error.message);
+      logger.error('키워드 기반 가이드라인 검색 오류:', error.message);
       return [];
     }
   }
@@ -365,9 +366,9 @@ export class WeaviateAdapter {
         .withProperties({ isActive })
         .do();
 
-      console.log(`✅ 가이드라인 상태 업데이트 완료: ${ruleId} -> ${isActive}`);
+      logger.info(`✅ 가이드라인 상태 업데이트 완료: ${ruleId} -> ${isActive}`);
     } catch (error) {
-      console.error(`가이드라인 상태 업데이트 오류 (${ruleId}):`, error.message);
+      logger.error(`가이드라인 상태 업데이트 오류 (${ruleId}):`, error.message);
       throw error;
     }
   }
@@ -395,9 +396,9 @@ export class WeaviateAdapter {
         .withId(guidelineId)
         .do();
 
-      console.log(`✅ 가이드라인 삭제 완료: ${ruleId}`);
+      logger.info(`✅ 가이드라인 삭제 완료: ${ruleId}`);
     } catch (error) {
-      console.error(`가이드라인 삭제 오류 (${ruleId}):`, error.message);
+      logger.error(`가이드라인 삭제 오류 (${ruleId}):`, error.message);
       throw error;
     }
   }
@@ -414,7 +415,7 @@ export class WeaviateAdapter {
 
       return result.data?.Get?.[this.codePatternClassName] || [];
     } catch (error) {
-      console.error('AST 패턴 검색 오류:', error.message);
+      logger.error('AST 패턴 검색 오류:', error.message);
       return [];
     }
   }
@@ -437,7 +438,7 @@ export class WeaviateAdapter {
 
       return result.data?.Get?.[this.codePatternClassName] || [];
     } catch (error) {
-      console.error('복잡도 기반 검색 오류:', error.message);
+      logger.error('복잡도 기반 검색 오류:', error.message);
       return [];
     }
   }
@@ -448,9 +449,9 @@ export class WeaviateAdapter {
         .withClassName(this.codePatternClassName)
         .withId(patternId)
         .do();
-      console.log(`✅ 패턴 삭제 완료: ${patternId}`);
+      logger.info(`✅ 패턴 삭제 완료: ${patternId}`);
     } catch (error) {
-      console.error(`패턴 삭제 오류 (${patternId}):`, error.message);
+      logger.error(`패턴 삭제 오류 (${patternId}):`, error.message);
       throw error;
     }
   }
@@ -458,10 +459,10 @@ export class WeaviateAdapter {
   async checkConnection() {
     try {
       await this.client.misc.metaGetter().do();
-      console.log('✅ Weaviate 연결 성공');
+      logger.info('✅ Weaviate 연결 성공');
       return true;
     } catch (error) {
-      console.error('Weaviate 연결 실패:', error.message);
+      logger.error('Weaviate 연결 실패:', error.message);
       return false;
     }
   }
@@ -485,7 +486,7 @@ export class WeaviateAdapter {
         totalObjects: codePatternCount + guidelineCount
       };
     } catch (error) {
-      console.error('시스템 상태 조회 오류:', error.message);
+      logger.error('시스템 상태 조회 오류:', error.message);
       return { codePatterns: 0, guidelines: 0, totalObjects: 0 };
     }
   }

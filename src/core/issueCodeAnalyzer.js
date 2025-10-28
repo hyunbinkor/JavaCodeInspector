@@ -58,6 +58,7 @@ import { JavaASTParser } from '../ast/javaAstParser.js';
 import { LLMService } from '../clients/llmService.js';
 import { DynamicSafePatternAnalyzer } from './dynamicSafePatternAnalyzer.js';
 import { config } from '../config.js';
+import logger from '../utils/loggerUtils.js';
 /**
  * VectorDB 동적 패턴 기반 코드 분석기 클래스
  * 
@@ -102,7 +103,7 @@ export class issueCodeAnalyzer {
    * @throws {Error} LLM 서비스 연결 실패 시
    */
   async initialize() {
-    console.log('🚀 코드 분석기 초기화 중...');
+    logger.info('🚀 코드 분석기 초기화 중...');
 
     const isConnected = await this.llmService.checkConnection();
     if (!isConnected) {
@@ -111,7 +112,7 @@ export class issueCodeAnalyzer {
 
     await this.dynamicAnalyzer.initialize();
 
-    console.log('✅ 코드 분석기 초기화 완료');
+    logger.info('✅ 코드 분석기 초기화 완료');
   }
 
   /**
@@ -152,7 +153,7 @@ export class issueCodeAnalyzer {
    * 
    * @example
    * const result = await analyzer.analyzeCodeIssues(javaCode);
-   * console.log(`발견된 이슈: ${result.detectedIssues.length}개`);
+   * logger.info(`발견된 이슈: ${result.detectedIssues.length}개`);
    * 
    * @example
    * // 미리 검색한 패턴 제공
@@ -164,7 +165,7 @@ export class issueCodeAnalyzer {
    * # PERFORMANCE: 벡터 임베딩 캐싱으로 중복 생성 방지
    */
   async analyzeCodeIssues(sourceCode, similarPatterns) {
-    console.log('🔍 코드 내 문제 위치 분석 시작...');
+    logger.info('🔍 코드 내 문제 위치 분석 시작...');
 
     const detectedIssues = [];
     const codeLines = sourceCode.split('\n');
@@ -174,7 +175,7 @@ export class issueCodeAnalyzer {
 
     // similarPatterns가 이미 제공되었는지 확인
     if (!similarPatterns || similarPatterns.length === 0) {
-      console.log('  ⚠️ 유사 패턴이 제공되지 않음, VectorDB 검색 시도...');
+      logger.info('  ⚠️ 유사 패턴이 제공되지 않음, VectorDB 검색 시도...');
       
       try {
         // 검색용 임베딩 생성
@@ -186,16 +187,16 @@ export class issueCodeAnalyzer {
         
         // 벡터 검증
         if (!queryVector || queryVector.length !== 480) {
-          console.error(`❌ 검색 벡터 차원 오류: ${queryVector?.length} !== 480`);
+          logger.error(`❌ 검색 벡터 차원 오류: ${queryVector?.length} !== 480`);
           similarPatterns = [];
         } else {
-          console.log(`  🔍 검색 벡터 생성 완료: 480차원`);
-          console.log(`     범위: [${Math.min(...queryVector).toFixed(4)}, ${Math.max(...queryVector).toFixed(4)}]`);
+          logger.info(`  🔍 검색 벡터 생성 완료: 480차원`);
+          logger.info(`     범위: [${Math.min(...queryVector).toFixed(4)}, ${Math.max(...queryVector).toFixed(4)}]`);
           
           // 0이 아닌 값 비율 확인
           const nonZeroCount = queryVector.filter(v => v !== 0).length;
           const nonZeroRatio = (nonZeroCount / 480 * 100).toFixed(1);
-          console.log(`     0이 아닌 값: ${nonZeroCount}/480 (${nonZeroRatio}%)`);
+          logger.info(`     0이 아닌 값: ${nonZeroCount}/480 (${nonZeroRatio}%)`);
           
           if (nonZeroCount === 0) {
             console.warn('     ⚠️ 모든 값이 0인 벡터 - 검색 결과가 없을 수 있음');
@@ -211,18 +212,18 @@ export class issueCodeAnalyzer {
             0.7  // threshold
           );
           
-          console.log(`  ✅ VectorDB 검색 완료: ${similarPatterns.length}개 패턴 발견`);
+          logger.info(`  ✅ VectorDB 검색 완료: ${similarPatterns.length}개 패턴 발견`);
           
           if (similarPatterns.length > 0) {
-            console.log(`     최고 유사도: ${similarPatterns[0].score?.toFixed(4) || 'N/A'}`);
-            console.log(`     카테고리 분포:`, 
+            logger.info(`     최고 유사도: ${similarPatterns[0].score?.toFixed(4) || 'N/A'}`);
+            logger.info(`     카테고리 분포:`, 
               [...new Set(similarPatterns.map(p => p.category))].join(', '));
           }
         }
       } catch (error) {
-        console.error('  ❌ VectorDB 검색 실패:', error.message);
+        logger.error('  ❌ VectorDB 검색 실패:', error.message);
         if (error.stack) {
-          console.error('     스택:', error.stack.split('\n').slice(0, 3).join('\n'));
+          logger.error('     스택:', error.stack.split('\n').slice(0, 3).join('\n'));
         }
         similarPatterns = [];
       }
@@ -230,15 +231,15 @@ export class issueCodeAnalyzer {
 
     // 1단계: VectorDB에서 안전한 패턴을 동적으로 확인
     const safePracticesFound = await this.dynamicAnalyzer.checkForSafePracticesDynamic(sourceCode);
-    console.log(`  📊 발견된 안전한 패턴: ${safePracticesFound.length}개`);
+    logger.info(`  📊 발견된 안전한 패턴: ${safePracticesFound.length}개`);
 
     // 2단계: 유사 패턴을 안전한 패턴과 문제 패턴으로 분류
     const patternClassification = this.dynamicAnalyzer.classifySimilarPatterns(similarPatterns);
-    console.log(`  ✅ 안전한 패턴: ${patternClassification.safePatterns.length}개`);
-    console.log(`  ⚠️ 문제 패턴: ${patternClassification.antiPatterns.length}개`);
+    logger.info(`  ✅ 안전한 패턴: ${patternClassification.safePatterns.length}개`);
+    logger.info(`  ⚠️ 문제 패턴: ${patternClassification.antiPatterns.length}개`);
 
     if (patternClassification.antiPatterns.length > 0) {
-      console.log(`     문제 패턴 카테고리:`, 
+      logger.info(`     문제 패턴 카테고리:`, 
         [...new Set(patternClassification.antiPatterns.map(p => p.category))].join(', '));
     }
 
@@ -247,19 +248,19 @@ export class issueCodeAnalyzer {
       // 해당 카테고리가 이미 안전하게 구현되었는지 동적으로 확인
       // 예: 'resource_management' 카테고리의 try-with-resources가 이미 사용 중이면 스킵
       if (this.dynamicAnalyzer.isCategorySafelyImplementedDynamic(pattern.category, safePracticesFound)) {
-        console.log(`  ✅ ${pattern.category} 카테고리는 안전하게 구현됨, 스킵`);
+        logger.info(`  ✅ ${pattern.category} 카테고리는 안전하게 구현됨, 스킵`);
         continue;
       }
 
       // VectorDB 패턴의 semantic signature를 사용하여 코드에서 문제 위치 탐지
       const matches = await this.dynamicAnalyzer.findIssuesUsingDynamicPatterns(sourceCode, [pattern]);
 
-      console.log(`  🔎 ${pattern.category} 패턴 매칭: ${matches.length}개 후보 발견`);
+      logger.info(`  🔎 ${pattern.category} 패턴 매칭: ${matches.length}개 후보 발견`);
 
       for (const match of matches) {
         // 매칭된 위치가 실제로 문제인지 재검증 (주석, 선언문 등 제외)
         if (!this.validateIssueMatch(match, codeLines, safePracticesFound)) {
-          console.log(`  ⭐️ 거짓 양성 제거: 라인 ${match.startLine} (${match.type})`);
+          logger.info(`  ⭐️ 거짓 양성 제거: 라인 ${match.startLine} (${match.type})`);
           continue;
         }
 
@@ -286,13 +287,13 @@ export class issueCodeAnalyzer {
         };
 
         detectedIssues.push(issue);
-        console.log(`  ✅ 이슈 추가: ${issue.title} (라인 ${issue.location.startLine})`);
+        logger.info(`  ✅ 이슈 추가: ${issue.title} (라인 ${issue.location.startLine})`);
       }
     }
 
     // 4단계: 동일 라인의 중복 이슈 제거
     const uniqueIssues = this.deduplicateIssuesStrict(detectedIssues);
-    console.log(`  🔄 중복 제거: ${detectedIssues.length} -> ${uniqueIssues.length}개`);
+    logger.info(`  🔄 중복 제거: ${detectedIssues.length} -> ${uniqueIssues.length}개`);
     
     // 5단계: 심각도, 신뢰도, 카테고리 우선순위로 정렬
     const sortedIssues = this.prioritizeIssues(uniqueIssues);
@@ -300,10 +301,10 @@ export class issueCodeAnalyzer {
     // 6단계: 각 카테고리별 VectorDB 기반 권장사항 생성
     const recommendations = this.generateCategoryRecommendations(patternClassification.antiPatterns, safePracticesFound);
 
-    console.log(`✅ 분석 완료: ${sortedIssues.length}개의 실제 문제 발견`);
+    logger.info(`✅ 분석 완료: ${sortedIssues.length}개의 실제 문제 발견`);
 
     if (sortedIssues.length > 0) {
-      console.log(`   심각도 분포:`, this.getSeverityDistribution(sortedIssues));
+      logger.info(`   심각도 분포:`, this.getSeverityDistribution(sortedIssues));
     }
 
     return {
@@ -396,7 +397,7 @@ export class issueCodeAnalyzer {
    * @returns {Object} 수정 단계, 수정된 코드, 설명, VectorDB 기반 제안을 포함한 수정안
    */
   async generateFixSuggestion(issue, sourceCode) {
-    console.log(`   수정안 생성 중: ${issue.title}`);
+    logger.info(`   수정안 생성 중: ${issue.title}`);
 
     try {
       // VectorDB에서 해당 카테고리의 안전한 패턴 정보 가져오기
@@ -637,10 +638,10 @@ ${categoryRecommendation.codeExample}
    * - Bedrock: 전체 코드 일괄 처리 (효율성 우선)
    */
   async generateFullFixedCodeWithLLM(sourceCode, detectedIssues) {
-    console.log('   LLM을 통한 전체 코드 수정 생성 중...');
+    logger.info('   LLM을 통한 전체 코드 수정 생성 중...');
 
     if (detectedIssues.length === 0) {
-      console.log('   수정할 이슈가 없습니다.');
+      logger.info('   수정할 이슈가 없습니다.');
       return sourceCode;
     }
 
@@ -659,15 +660,15 @@ ${categoryRecommendation.codeExample}
    * 배치 처리를 완전히 건너뛰고 바로 개별 처리 시작
    */
   async generateFullFixedCodeWithLLMChunked(sourceCode, detectedIssues) {
-    console.log('   📄 Ollama 개별 처리 전용 모드 시작...');
-    console.log('   ⚡ 배치 처리 건너뛰고 바로 개별 처리 시작');
+    logger.info('   📄 Ollama 개별 처리 전용 모드 시작...');
+    logger.info('   ⚡ 배치 처리 건너뛰고 바로 개별 처리 시작');
 
     const sortedIssues = this.prioritizeIssues(detectedIssues);
-    console.log(`   📊 코드 길이: ${sourceCode.length}자, 총 ${sortedIssues.length}개 이슈를 개별 처리`);
+    logger.info(`   📊 코드 길이: ${sourceCode.length}자, 총 ${sortedIssues.length}개 이슈를 개별 처리`);
 
     const currentCode = await this.processIssuesIndividually(sourceCode, sortedIssues);
 
-    console.log(`   ✅ Ollama 개별 처리 완료: ${sortedIssues.length}/${detectedIssues.length}개 이슈 처리됨`);
+    logger.info(`   ✅ Ollama 개별 처리 완료: ${sortedIssues.length}/${detectedIssues.length}개 이슈 처리됨`);
     return currentCode;
   }
 
@@ -704,14 +705,14 @@ ${categoryRecommendation.codeExample}
 
         // 이미 처리된 메서드는 스킵
         if (processedRegions.has(regionKey)) {
-          console.log(`   이미 처리된 메서드 스킵: ${issue.title} (${methodContext.methodName})`);
+          logger.info(`   이미 처리된 메서드 스킵: ${issue.title} (${methodContext.methodName})`);
           continue;
         }
 
         // 메서드에 집중된 간결한 프롬프트 생성
         const miniPrompt = this.createFocusedPrompt(methodContext, issue);
 
-        console.log(`   개별 처리 ${i + 1}/${sortedIssues.length}: ${issue.title} (메서드: ${methodContext.methodName})`);
+        logger.info(`   개별 처리 ${i + 1}/${sortedIssues.length}: ${issue.title} (메서드: ${methodContext.methodName})`);
 
         // LLM으로 메서드 수정 (낮은 temperature로 안정성 확보)
         const response = await this.llmService.generateCompletion(miniPrompt, {
@@ -741,7 +742,7 @@ ${categoryRecommendation.codeExample}
               lastModified: Date.now()
             });
 
-            console.log(`   메서드 교체 완료: ${methodContext.methodName}`);
+            logger.info(`   메서드 교체 완료: ${methodContext.methodName}`);
           } else {
             console.warn(`   코드 변경 검증 실패: ${issue.title}`);
           }
@@ -1015,7 +1016,7 @@ Requirements:
       const statementKey = this.normalizeStatement(trimmedLine);
 
       if (seenStatements.has(statementKey)) {
-        console.log(`   중복 구문 제거: ${trimmedLine}`);
+        logger.info(`   중복 구문 제거: ${trimmedLine}`);
         continue;
       }
 
@@ -1108,7 +1109,7 @@ Requirements:
       const fixedCode = this.extractCodeFromLLMResponse(response);
 
       if (fixedCode && this.validateFixedCodeQuality(fixedCode, sourceCode)) {
-        console.log('   ✅ LLM 기반 전체 코드 수정 완료');
+        logger.info('   ✅ LLM 기반 전체 코드 수정 완료');
         return fixedCode;
       } else {
         console.warn('   ⚠️ LLM 수정 결과 검증 실패, 기존 방식 사용');
@@ -1116,7 +1117,7 @@ Requirements:
       }
 
     } catch (error) {
-      console.error('   ❌ LLM 기반 수정 실패:', error.message);
+      logger.error('   ❌ LLM 기반 수정 실패:', error.message);
       return this.generateFullFixedCodeFallback(sourceCode, detectedIssues);
     }
   }
@@ -1211,7 +1212,7 @@ ${issuesSummary}
    */
   validateFixedCodeQuality(fixedCode, originalCode) {
     if (!fixedCode || fixedCode.length < originalCode.length * 0.2) {
-      console.log('   ❌ 수정 코드가 너무 짧음');
+      logger.info('   ❌ 수정 코드가 너무 짧음');
       return false;
     }
 
@@ -1219,7 +1220,7 @@ ${issuesSummary}
     const hasRequired = requiredElements.every(element => fixedCode.includes(element));
 
     if (!hasRequired) {
-      console.log('   ❌ 필수 Java 요소 누락');
+      logger.info('   ❌ 필수 Java 요소 누락');
       return false;
     }
 
@@ -1227,29 +1228,29 @@ ${issuesSummary}
     const closeBraces = (fixedCode.match(/\}/g) || []).length;
 
     if (Math.abs(openBraces - closeBraces) > 2) {
-      console.log('   ❌ 중괄호 불균형');
+      logger.info('   ❌ 중괄호 불균형');
       return false;
     }
 
     // 중복된 catch 블록 검사
     if (fixedCode.includes('} catch (SQLException e) {\n} catch (SQLException e) {')) {
-      console.log('   ❌ 중복된 catch 블록 발견');
+      logger.info('   ❌ 중복된 catch 블록 발견');
       return false;
     }
 
     // 중복된 PreparedStatement 선언 검사
     if (fixedCode.includes('PreparedStatement stmt = conn.prepareStatement(sql);\nPreparedStatement stmt = conn.prepareStatement(sql);')) {
-      console.log('   ❌ 중복된 PreparedStatement 선언 발견');
+      logger.info('   ❌ 중복된 PreparedStatement 선언 발견');
       return false;
     }
 
     // 닫히지 않은 문자열 검사
     if (fixedCode.includes('throw new PaymentProcessingException("Failed to process payment\n')) {
-      console.log('   ❌ 닫히지 않은 문자열 발견');
+      logger.info('   ❌ 닫히지 않은 문자열 발견');
       return false;
     }
 
-    console.log('   ✅ 코드 품질 검증 통과');
+    logger.info('   ✅ 코드 품질 검증 통과');
     return true;
   }
 

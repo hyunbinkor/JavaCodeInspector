@@ -35,6 +35,7 @@ import { manageGuidelines } from './commands/guidelinesCommand.js';
 import { extractGuidelinesFromPDF } from './commands/extractCommand.js';
 import { importGuidelinesToVectorDB } from './commands/importCommand.js';
 import { checkSystemStatus } from './commands/statusCommand.js';
+import logger from './utils/loggerUtils.js';
 
 const program = new Command();
 
@@ -77,7 +78,7 @@ program
     try {
       await performUnifiedCheck(options);
     } catch (error) {
-      console.error('통합 검사 실패:', error.message);
+      logger.error('통합 검사 실패:', error.message);
       process.exit(1);
     }
   });
@@ -108,7 +109,7 @@ program
     try {
       await performGuidelineOnlyCheck(options);
     } catch (error) {
-      console.error('가이드라인 검사 실패:', error.message);
+      logger.error('가이드라인 검사 실패:', error.message);
       process.exit(1);
     }
   });
@@ -139,7 +140,7 @@ program
     try {
       await searchAndAnalyzePatterns(options);
     } catch (error) {
-      console.error('❌ 검색 실패:', error.message);
+      logger.error('❌ 검색 실패:', error.message);
       process.exit(1);
     }
   });
@@ -171,7 +172,7 @@ program
     try {
       await searchAndAnalyzePatterns(options);
     } catch (error) {
-      console.error('패턴 검색 실패:', error.message);
+      logger.error('패턴 검색 실패:', error.message);
       process.exit(1);
     }
   });
@@ -196,7 +197,7 @@ program
     try {
       await processSingleIssue(options);
     } catch (error) {
-      console.error('분석 실패:', error.message);
+      logger.error('분석 실패:', error.message);
       process.exit(1);
     }
   });
@@ -222,7 +223,7 @@ program
     try {
       await processBatchIssues(options);
     } catch (error) {
-      console.error('배치 처리 실패:', error.message);
+      logger.error('배치 처리 실패:', error.message);
       process.exit(1);
     }
   });
@@ -252,7 +253,7 @@ program
     try {
       await manageGuidelines(options);
     } catch (error) {
-      console.error('가이드라인 관리 실패:', error.message);
+      logger.error('가이드라인 관리 실패:', error.message);
       process.exit(1);
     }
   });
@@ -289,7 +290,7 @@ program
     try {
       await extractGuidelinesFromPDF(options);
     } catch (error) {
-      console.error('가이드라인 추출 실패:', error.message);
+      logger.error('가이드라인 추출 실패:', error.message);
       process.exit(1);
     }
   });
@@ -323,7 +324,7 @@ program
     try {
       await importGuidelinesToVectorDB(options);
     } catch (error) {
-      console.error('가이드라인 import 실패:', error.message);
+      logger.error('가이드라인 import 실패:', error.message);
       process.exit(1);
     }
   });
@@ -353,7 +354,7 @@ program
     try {
       await checkSystemStatus();
     } catch (error) {
-      console.error('상태 확인 실패:', error.message);
+      logger.error('상태 확인 실패:', error.message);
       process.exit(1);
     }
   });
@@ -375,7 +376,7 @@ async function main() {
   try {
     await program.parseAsync(process.argv);
   } catch (error) {
-    console.error('실행 오류:', error.message);
+    logger.error('실행 오류:', error.message);
     process.exit(1);
   }
 }

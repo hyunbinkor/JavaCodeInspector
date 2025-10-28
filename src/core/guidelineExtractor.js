@@ -48,6 +48,7 @@ import { fileURLToPath } from 'url';
 import PDFParser from 'pdf2json';
 import { LLMService } from '../clients/llmService.js';
 import { saveJsonData } from '../utils/fileUtils.js';
+import logger from '../utils/loggerUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -100,14 +101,14 @@ export class GuidelineExtractor {
    * - LLM 연결 실패 시에도 기본 파싱은 진행
    */
   async initialize() {
-    console.log('🚀 가이드라인 추출기 초기화 중...');
+    logger.info('🚀 가이드라인 추출기 초기화 중...');
 
     const llmConnected = await this.llmService.checkConnection();
     if (!llmConnected) {
       console.warn('⚠️ LLM 서비스 연결 실패 - 프로그래밍 방식만 사용');
       this.llmService = null;
     } else {
-      console.log('✅ LLM 서비스 연결 완료');
+      logger.info('✅ LLM 서비스 연결 완료');
     }
   }
 
@@ -139,7 +140,7 @@ export class GuidelineExtractor {
    * const extractor = new GuidelineExtractor();
    * await extractor.initialize();
    * const guidelines = await extractor.extractFromPDF('./coding_standards.pdf');
-   * console.log(`추출된 규칙: ${guidelines.length}개`);
+   * logger.info(`추출된 규칙: ${guidelines.length}개`);
    * 
    * # TODO: Python 변환 - pdfplumber.open() 사용
    * # TODO: 에러 핸들링 강화 (재시도 로직, 상세 에러 메시지)
@@ -149,30 +150,30 @@ export class GuidelineExtractor {
   async extractFromPDF(pdfPath) {
     return new Promise(async (resolve, reject) => {
       try {
-        console.log(`PDF 파일 확인 중: ${pdfPath}`);
+        logger.info(`PDF 파일 확인 중: ${pdfPath}`);
         await fs.access(pdfPath);
-        console.log('PDF 파일 존재 확인됨');
+        logger.info('PDF 파일 존재 확인됨');
 
         const pdfParser = new PDFParser();
 
         pdfParser.on('pdfParser_dataError', errData => {
-          console.error('PDF 파싱 오류:', errData.parserError);
+          logger.error('PDF 파싱 오류:', errData.parserError);
           reject(new Error('PDF 파싱 실패'));
         });
 
         pdfParser.on('pdfParser_dataReady', async pdfData => {
           try {
-            console.log('PDF 파싱 완료');
+            logger.info('PDF 파싱 완료');
 
             let fullText = '';
 
             // 각 페이지의 텍스트 블록을 순회하며 전체 텍스트 구성
             if (pdfData.Pages) {
-              console.log(`페이지 수: ${pdfData.Pages.length}`);
+              logger.info(`페이지 수: ${pdfData.Pages.length}`);
 
               for (let pageIndex = 0; pageIndex < pdfData.Pages.length; pageIndex++) {
                 const page = pdfData.Pages[pageIndex];
-                console.log(`페이지 ${pageIndex + 1}/${pdfData.Pages.length} 처리 중...`);
+                logger.info(`페이지 ${pageIndex + 1}/${pdfData.Pages.length} 처리 중...`);
 
                 if (page.Texts) {
                   // 각 텍스트 블록의 URI 인코딩된 텍스트를 디코딩하여 연결
@@ -187,7 +188,7 @@ export class GuidelineExtractor {
               }
             }
 
-            console.log(`텍스트 추출 완료 - 총 ${fullText.length}자`);
+            logger.info(`텍스트 추출 완료 - 총 ${fullText.length}자`);
             this.extractedText = fullText;
 
             if (fullText.length === 0) {
@@ -196,7 +197,7 @@ export class GuidelineExtractor {
             }
 
             await this.parseTextContent(fullText);
-            console.log(`총 ${this.guidelines.length}개 가이드라인 추출 완료`);
+            logger.info(`총 ${this.guidelines.length}개 가이드라인 추출 완료`);
             resolve(this.guidelines);
 
           } catch (error) {
@@ -204,11 +205,11 @@ export class GuidelineExtractor {
           }
         });
 
-        console.log('PDF 파일 로딩 중...');
+        logger.info('PDF 파일 로딩 중...');
         pdfParser.loadPDF(pdfPath);
 
       } catch (error) {
-        console.error('PDF 처리 오류:', error.message);
+        logger.error('PDF 처리 오류:', error.message);
         reject(error);
       }
     });
@@ -247,7 +248,7 @@ export class GuidelineExtractor {
    * # NOTE: 목차 제거 실패 시 전체 텍스트 파싱 (노이즈 증가)
    */
   async parseTextContent(text) {
-    console.log('텍스트 분석 시작...\n');
+    logger.info('텍스트 분석 시작...\n');
 
     // 공백 정규화: 여러 공백을 하나로 통일
     let normalizedText = text
@@ -268,7 +269,7 @@ export class GuidelineExtractor {
         i + 1 < lines.length &&
         lines[i + 1].match(/^2\.1\.\s*서비스/)) {
         contentStartLine = i;
-        console.log(`✔ 본문 시작: ${i}번째 라인 - "${line}"`);
+        logger.info(`✔ 본문 시작: ${i}번째 라인 - "${line}"`);
         break;
       }
     }
@@ -276,28 +277,28 @@ export class GuidelineExtractor {
     // 목차 제거: 본문 시작점 이후부터만 사용
     if (contentStartLine > 0) {
       workingText = lines.slice(contentStartLine).join('\n');
-      console.log(`✔ 목차 제거 완료 (${contentStartLine}줄 제거)`);
+      logger.info(`✔ 목차 제거 완료 (${contentStartLine}줄 제거)`);
     } else {
       // 대체 방법: "설계 단계" 문자열로 본문 찾기
       const fallbackStart = normalizedText.indexOf('설계 단계 명명규칙 및 코딩표준 2');
       if (fallbackStart > 0) {
         workingText = normalizedText.substring(fallbackStart);
-        console.log('✔ "설계 단계" 마커로 본문 확인');
+        logger.info('✔ "설계 단계" 마커로 본문 확인');
       }
     }
 
-    console.log(`작업 텍스트: ${workingText.split('\n').length}줄, ${workingText.length}자`);
-    console.log(`샘플:\n${workingText.substring(0, 200)}...\n`);
+    logger.info(`작업 텍스트: ${workingText.split('\n').length}줄, ${workingText.length}자`);
+    logger.info(`샘플:\n${workingText.substring(0, 200)}...\n`);
 
     // 번호 기반 섹션 파싱 (2.1, 3.2.1 형식)
     const sections = this.parseSections(workingText);
-    console.log(`\n${sections.length}개 섹션 발견\n`);
+    logger.info(`\n${sections.length}개 섹션 발견\n`);
 
     if (sections.length === 0) {
-      console.log('⚠️ 경고: 섹션을 찾지 못했습니다.');
+      logger.info('⚠️ 경고: 섹션을 찾지 못했습니다.');
       const sampleLines = workingText.split('\n').slice(0, 10);
-      console.log('처음 10줄:');
-      sampleLines.forEach((line, idx) => console.log(`${idx}: ${line.substring(0, 80)}`));
+      logger.info('처음 10줄:');
+      sampleLines.forEach((line, idx) => logger.info(`${idx}: ${line.substring(0, 80)}`));
     }
 
     // 각 섹션에서 기본 가이드라인 추출
@@ -316,10 +317,10 @@ export class GuidelineExtractor {
 
     // LLM을 사용한 심화 분석 (연결된 경우)
     if (this.llmService && this.rawChunks.length > 0) {
-      console.log(`\n🧠 LLM 심화 분석 시작 (${this.rawChunks.length}개 청크)`);
+      logger.info(`\n🧠 LLM 심화 분석 시작 (${this.rawChunks.length}개 청크)`);
       await this.enhanceGuidelinesWithLLM();
     } else {
-      console.log('\n⚠️ LLM 미사용 - 기본 추출 결과만 저장');
+      logger.info('\n⚠️ LLM 미사용 - 기본 추출 결과만 저장');
       this.guidelines = this.rawChunks.map(chunk => chunk.basicGuideline);
     }
   }
@@ -334,7 +335,7 @@ export class GuidelineExtractor {
 
     for (let i = 0; i < this.rawChunks.length; i += batchSize) {
       const batch = this.rawChunks.slice(i, Math.min(i + batchSize, this.rawChunks.length));
-      console.log(`\n📦 배치 ${Math.floor(i / batchSize) + 1}/${Math.ceil(this.rawChunks.length / batchSize)} 처리 중...`);
+      logger.info(`\n📦 배치 ${Math.floor(i / batchSize) + 1}/${Math.ceil(this.rawChunks.length / batchSize)} 처리 중...`);
 
       const enhancedBatch = await Promise.all(
         batch.map(chunk => this.enhanceGuidelineWithLLM(chunk))
@@ -351,13 +352,13 @@ export class GuidelineExtractor {
               if (index !== -1) {
                 this.guidelines[index] = enhanced;
                 this.seenSections.set(enhanced.sectionNumber, enhanced);
-                console.log(`✔ 규칙 갱신 (LLM): ${enhanced.title}`);
+                logger.info(`✔ 규칙 갱신 (LLM): ${enhanced.title}`);
               }
             }
           } else {
             this.guidelines.push(enhanced);
             this.seenSections.set(enhanced.sectionNumber, enhanced);
-            console.log(`✔ 규칙 추출 (LLM): ${enhanced.title}`);
+            logger.info(`✔ 규칙 추출 (LLM): ${enhanced.title}`);
           }
         }
       });
@@ -546,7 +547,7 @@ ${castOperatorGuidance}
       .split('\n')
       .filter(line => line.trim().length > 0);
 
-    console.log(`전처리 후 ${processedLines.length}개 라인\n`);
+    logger.info(`전처리 후 ${processedLines.length}개 라인\n`);
 
     for (let i = 0; i < processedLines.length; i++) {
       const line = processedLines[i].trim();
@@ -620,10 +621,10 @@ ${castOperatorGuidance}
         fullTitle: `${sectionNumber} ${sectionTitle}`
       });
 
-      console.log(`✔ ${sectionNumber} ${sectionTitle} (${content.length}자)`);
+      logger.info(`✔ ${sectionNumber} ${sectionTitle} (${content.length}자)`);
     }
 
-    console.log(`\n총 ${sections.length}개 섹션 파싱 완료`);
+    logger.info(`\n총 ${sections.length}개 섹션 파싱 완료`);
     return sections;
   }
 
@@ -1036,8 +1037,8 @@ ${castOperatorGuidance}
 
       await saveJsonData(outputData, outputPath, 'rule');
 
-      console.log(`\n저장 완료: ${outputPath}`);
-      console.log(`추출된 가이드라인: ${this.guidelines.length}개`);
+      logger.info(`\n저장 완료: ${outputPath}`);
+      logger.info(`추출된 가이드라인: ${this.guidelines.length}개`);
 
       // 통계 정보 수집
       const stats = {
@@ -1053,24 +1054,24 @@ ${castOperatorGuidance}
       });
 
       // 통계 출력
-      console.log('\n카테고리별 분포:');
+      logger.info('\n카테고리별 분포:');
       Object.entries(stats.category).forEach(([k, v]) =>
-        console.log(`  - ${k}: ${v}개`)
+        logger.info(`  - ${k}: ${v}개`)
       );
 
-      console.log('\n심각도별 분포:');
+      logger.info('\n심각도별 분포:');
       Object.entries(stats.severity).forEach(([k, v]) =>
-        console.log(`  - ${k}: ${v}개`)
+        logger.info(`  - ${k}: ${v}개`)
       );
 
-      console.log('\n검사 타입별 분포:');
+      logger.info('\n검사 타입별 분포:');
       Object.entries(stats.checkType).forEach(([k, v]) =>
-        console.log(`  - ${k}: ${v}개`)
+        logger.info(`  - ${k}: ${v}개`)
       );
 
       return outputPath;
     } catch (error) {
-      console.error('저장 실패:', error.message);
+      logger.error('저장 실패:', error.message);
       throw error;
     }
   }
@@ -1082,19 +1083,19 @@ ${castOperatorGuidance}
  * - GuidelineExtractor 초기화 및 실행
  */
 async function main() {
-  console.log('LLM 강화 가이드라인 추출기 v4.0 시작\n');
+  logger.info('LLM 강화 가이드라인 추출기 v4.0 시작\n');
 
   const args = process.argv.slice(2);
 
   if (args.length < 2) {
-    console.log('\n사용법: node guideline-extractor-llm.js <input.pdf> <output.json>');
+    logger.info('\n사용법: node guideline-extractor-llm.js <input.pdf> <output.json>');
     return;
   }
 
   const [inputPdf, outputJson] = args;
 
-  console.log(`입력 파일: ${inputPdf}`);
-  console.log(`출력 파일: ${outputJson}\n`);
+  logger.info(`입력 파일: ${inputPdf}`);
+  logger.info(`출력 파일: ${outputJson}\n`);
 
   try {
     const extractor = new GuidelineExtractor();
@@ -1103,15 +1104,15 @@ async function main() {
 
     // 추출 결과 품질 확인
     if (extractor.guidelines.length < 10) {
-      console.log('\n⚠️ 경고: 추출된 규칙이 너무 적습니다. 텍스트 샘플을 확인하세요.');
-      console.log('extracted_text_debug.txt 파일을 검토해보세요.\n');
+      logger.info('\n⚠️ 경고: 추출된 규칙이 너무 적습니다. 텍스트 샘플을 확인하세요.');
+      logger.info('extracted_text_debug.txt 파일을 검토해보세요.\n');
     }
 
     await extractor.saveToJSON(outputJson);
-    console.log('\n✅ 추출 완료!');
+    logger.info('\n✅ 추출 완료!');
 
   } catch (error) {
-    console.error('\n실행 실패:', error.message);
+    logger.error('\n실행 실패:', error.message);
     process.exit(1);
   }
 }
@@ -1119,7 +1120,7 @@ async function main() {
 // 직접 실행 시에만 main 함수 호출
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(error => {
-    console.error('실행 중 오류:', error);
+    logger.error('실행 중 오류:', error);
     process.exit(1);
   });
 }

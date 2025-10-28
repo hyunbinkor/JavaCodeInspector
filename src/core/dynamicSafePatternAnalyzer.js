@@ -58,7 +58,7 @@ import { JavaASTParser } from '../ast/javaAstParser.js';
 import { LLMService } from '../clients/llmService.js';
 import { VectorClient } from '../clients/vectorClient.js';
 import { config } from '../config.js';
-
+import logger from '../utils/loggerUtils.js';
 /**
  * 동적 안전 패턴 분석기 클래스
  * 
@@ -112,7 +112,7 @@ export class DynamicSafePatternAnalyzer {
    * await analyzer.initialize();
    */
   async initialize() {
-    console.log('🚀 동적 패턴 분석기 초기화 중...');
+    logger.info('🚀 동적 패턴 분석기 초기화 중...');
 
     const isConnected = await this.llmService.checkConnection();
     if (!isConnected) {
@@ -122,9 +122,9 @@ export class DynamicSafePatternAnalyzer {
     // VectorDB에서 모든 패턴을 가져와 안전/문제 패턴으로 분류하여 캐시에 저장
     await this.loadAndClassifyPatterns();
 
-    console.log('✅ 동적 패턴 분석기 초기화 완료');
-    console.log(`  📊 안전한 패턴: ${this.safePatternCache.size}개`);
-    console.log(`  ⚠️  문제 패턴: ${this.antiPatternCache.size}개`);
+    logger.info('✅ 동적 패턴 분석기 초기화 완료');
+    logger.info(`  📊 안전한 패턴: ${this.safePatternCache.size}개`);
+    logger.info(`  ⚠️  문제 패턴: ${this.antiPatternCache.size}개`);
   }
 
   /**
@@ -193,50 +193,50 @@ export class DynamicSafePatternAnalyzer {
   async loadAndClassifyPatterns() {
     try {
       const allPatterns = await this.vectorClient.getAllPatterns();
-      console.log(`🔍 로드된 전체 패턴: ${allPatterns.length}개`);
+      logger.info(`🔍 로드된 전체 패턴: ${allPatterns.length}개`);
 
       for (const pattern of allPatterns) {
         const { issueRecordId, title, category, recommended, anti } =
           this.normalizePatternFields(pattern);
 
-        console.log(`📋 처리 중인 패턴: ${title || issueRecordId} (${category})`);
+        logger.info(`📋 처리 중인 패턴: ${title || issueRecordId} (${category})`);
 
         // recommended_pattern의 code_template이 존재하면 안전한 패턴으로 등록
         if (recommended && recommended.code_template) {
-          console.log(`  ✅ 안전한 패턴으로 분류: ${category}`);
+          logger.info(`  ✅ 안전한 패턴으로 분류: ${category}`);
           const safePattern = this.extractSafePattern({ category, recommended_pattern: recommended, metadata: { title } });
           if (safePattern) this.safePatternCache.set(category, safePattern);
         }
 
         // anti_pattern의 code_template이 존재하면 문제 패턴으로 등록
         if (anti && anti.code_template) {
-          console.log(`  ⚠️ 문제 패턴으로 분류: ${category}`);
+          logger.info(`  ⚠️ 문제 패턴으로 분류: ${category}`);
           const key = `${category}_${issueRecordId || title || Math.random().toString(36).slice(2)}`;
           const antiPattern = this.extractAntiPattern({ category, anti_pattern: anti, metadata: { title }, issue_record_id: issueRecordId });
           if (antiPattern) this.antiPatternCache.set(key, antiPattern);
         }
 
         if (!(recommended && recommended.code_template) && !(anti && anti.code_template)) {
-          console.log(`  ⚠️ 패턴에 recommended_pattern 또는 anti_pattern 정보 없음`);
+          logger.info(`  ⚠️ 패턴에 recommended_pattern 또는 anti_pattern 정보 없음`);
         }
       }
 
-      console.log('📋 패턴 분류 완료');
-      console.log(`  ✅ 안전한 패턴: ${this.safePatternCache.size}개`);
-      console.log(`  ⚠️ 문제 패턴: ${this.antiPatternCache.size}개`);
+      logger.info('📋 패턴 분류 완료');
+      logger.info(`  ✅ 안전한 패턴: ${this.safePatternCache.size}개`);
+      logger.info(`  ⚠️ 문제 패턴: ${this.antiPatternCache.size}개`);
 
       // 분류된 패턴 목록 출력 (디버깅용)
       if (this.safePatternCache.size > 0) {
-        console.log('  📋 안전한 패턴 목록:');
+        logger.info('  📋 안전한 패턴 목록:');
         for (const [category, pattern] of this.safePatternCache) {
-          console.log(`    - ${category}: ${pattern.patternName}`);
+          logger.info(`    - ${category}: ${pattern.patternName}`);
         }
       }
 
       if (this.antiPatternCache.size > 0) {
-        console.log('  📋 문제 패턴 목록:');
+        logger.info('  📋 문제 패턴 목록:');
         for (const [key, pattern] of this.antiPatternCache) {
-          console.log(`    - ${key}: ${pattern.title}`);
+          logger.info(`    - ${key}: ${pattern.title}`);
         }
       }
 
@@ -536,7 +536,7 @@ export class DynamicSafePatternAnalyzer {
    * (하나의 패턴이 둘 다 가질 수 있으므로 독립적으로 처리)
    */
   classifySimilarPatterns(similarPatterns) {
-    console.log(`\n🔍 유사 패턴 분류 시작 (총 ${similarPatterns.length}개)`);
+    logger.info(`\n🔍 유사 패턴 분류 시작 (총 ${similarPatterns.length}개)`);
 
     const classification = {
       safePatterns: [],
@@ -544,14 +544,14 @@ export class DynamicSafePatternAnalyzer {
     };
 
     similarPatterns.forEach((pattern, index) => {
-      console.log(`📋 패턴 ${index + 1} 분석: ${pattern.metadata?.title || pattern.issue_record_id}`);
-      console.log(`  카테고리: ${pattern.category}`);
-      console.log(`  recommended_pattern 존재: ${pattern.recommended_pattern ? 'YES' : 'NO'}`);
-      console.log(`  anti_pattern 존재: ${pattern.anti_pattern ? 'YES' : 'NO'}`);
+      logger.info(`📋 패턴 ${index + 1} 분석: ${pattern.metadata?.title || pattern.issue_record_id}`);
+      logger.info(`  카테고리: ${pattern.category}`);
+      logger.info(`  recommended_pattern 존재: ${pattern.recommended_pattern ? 'YES' : 'NO'}`);
+      logger.info(`  anti_pattern 존재: ${pattern.anti_pattern ? 'YES' : 'NO'}`);
 
       // recommended_pattern.code_template이 있으면 안전한 패턴으로 추가
       if (pattern.recommended_pattern && pattern.recommended_pattern.code_template) {
-        console.log(`  ✅ 안전한 패턴 정보 추가`);
+        logger.info(`  ✅ 안전한 패턴 정보 추가`);
         classification.safePatterns.push({
           ...pattern,
           type: 'safe_pattern'
@@ -560,7 +560,7 @@ export class DynamicSafePatternAnalyzer {
 
       // anti_pattern.code_template이 있으면 문제 패턴으로 추가 (독립적)
       if (pattern.anti_pattern && pattern.anti_pattern.code_template) {
-        console.log(`  ⚠️ 문제 패턴으로 분류`);
+        logger.info(`  ⚠️ 문제 패턴으로 분류`);
         classification.antiPatterns.push({
           ...pattern,
           type: 'anti_pattern'
@@ -569,7 +569,7 @@ export class DynamicSafePatternAnalyzer {
 
       // 둘 다 없으면 하위 호환성을 위해 문제 패턴으로 간주
       if (!pattern.recommended_pattern && !pattern.anti_pattern) {
-        console.log(`  ⚠️ 패턴 정보 없음, 기본적으로 문제 패턴으로 분류`);
+        logger.info(`  ⚠️ 패턴 정보 없음, 기본적으로 문제 패턴으로 분류`);
         classification.antiPatterns.push({
           ...pattern,
           type: 'anti_pattern'
@@ -577,9 +577,9 @@ export class DynamicSafePatternAnalyzer {
       }
     });
 
-    console.log(`📊 분류 결과:`);
-    console.log(`  ✅ 안전한 패턴: ${classification.safePatterns.length}개`);
-    console.log(`  ⚠️ 문제 패턴: ${classification.antiPatterns.length}개`);
+    logger.info(`📊 분류 결과:`);
+    logger.info(`  ✅ 안전한 패턴: ${classification.safePatterns.length}개`);
+    logger.info(`  ⚠️ 문제 패턴: ${classification.antiPatterns.length}개`);
 
     return classification;
   }
@@ -589,24 +589,24 @@ export class DynamicSafePatternAnalyzer {
    * 실제로 코드에 존재하는 이슈들을 탐지
    */
   async findIssuesUsingDynamicPatterns(sourceCode, antiPatterns) {
-    console.log(`\n🔍 동적 패턴 매칭 시작 (문제 패턴 ${antiPatterns.length}개 검사)`);
+    logger.info(`\n🔍 동적 패턴 매칭 시작 (문제 패턴 ${antiPatterns.length}개 검사)`);
     const issues = [];
 
     for (const pattern of antiPatterns) {
-      console.log(`📋 패턴 검사 중: ${pattern.metadata?.title || pattern.title} (${pattern.category})`);
+      logger.info(`📋 패턴 검사 중: ${pattern.metadata?.title || pattern.title} (${pattern.category})`);
 
       const matches = await this.matchAntiPattern(sourceCode, pattern);
-      console.log(`  발견된 매치: ${matches.length}개`);
+      logger.info(`  발견된 매치: ${matches.length}개`);
 
       if (matches.length > 0) {
         issues.push(...matches);
         matches.forEach((match, idx) => {
-          console.log(`    ${idx + 1}. 라인 ${match.startLine}: ${match.description}`);
+          logger.info(`    ${idx + 1}. 라인 ${match.startLine}: ${match.description}`);
         });
       }
     }
 
-    console.log(`📊 동적 패턴 매칭 결과: ${issues.length}개 이슈 발견`);
+    logger.info(`📊 동적 패턴 매칭 결과: ${issues.length}개 이슈 발견`);
     return issues;
   }
 
@@ -623,7 +623,7 @@ export class DynamicSafePatternAnalyzer {
     const signatures = antiPattern.anti_pattern?.pattern_signature || {};
 
     if (signatures.regex_patterns && Array.isArray(signatures.regex_patterns)) {
-      console.log(`  정규식 패턴 검사: ${signatures.regex_patterns.length}개`);
+      logger.info(`  정규식 패턴 검사: ${signatures.regex_patterns.length}개`);
 
       for (const regexPattern of signatures.regex_patterns) {
         try {
@@ -831,7 +831,7 @@ export class DynamicSafePatternAnalyzer {
    * (새로운 패턴이 추가되었을 때 호출)
    */
   async refreshPatternCache() {
-    console.log('🔄 패턴 캐시 갱신 중...');
+    logger.info('🔄 패턴 캐시 갱신 중...');
     this.safePatternCache.clear();
     this.antiPatternCache.clear();
     await this.loadAndClassifyPatterns();

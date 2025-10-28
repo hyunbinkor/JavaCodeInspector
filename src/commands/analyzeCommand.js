@@ -1,5 +1,6 @@
 import { PatternDatasetGenerator } from '../core/patternGenerator.js';
 import { loadData, saveJsonData } from '../utils/fileUtils.js';
+import logger from '../utils/loggerUtils.js';
 
 /**
  * 단일 이슈 분석 및 패턴 데이터셋 생성
@@ -13,12 +14,12 @@ import { loadData, saveJsonData } from '../utils/fileUtils.js';
  */
 export async function processSingleIssue(options) {
   if (!options.input) {
-    console.error('입력 파일을 지정해주세요: -i <file>');
+    logger.error('입력 파일을 지정해주세요: -i <file>');
     return;
   }
 
-  console.log('단일 이슈 분석 시작');
-  console.log(`입력 파일: ${options.input}`);
+  logger.info('단일 이슈 분석 시작');
+  logger.info(`입력 파일: ${options.input}`);
 
   const issueData = await loadData(options.input, 'issueRaw');
   const generator = new PatternDatasetGenerator();
@@ -29,12 +30,12 @@ export async function processSingleIssue(options) {
 
   if (options.output) {
     await saveJsonData(patternDataset, options.output, 'issuePattern');
-    console.log(`결과 저장: ${options.output}`);
+    logger.info(`결과 저장: ${options.output}`);
   } else {
-    console.log('\n생성된 패턴 데이터셋:');
-    console.log(JSON.stringify(patternDataset, null, 2));
+    logger.info('\n생성된 패턴 데이터셋:');
+    logger.info(JSON.stringify(patternDataset, null, 2));
   }
 
-  console.log(`분석 완료: ${patternDataset.issue_record_id}`);
-  console.log(`품질 점수: ${patternDataset.validation_info.quality_score.toFixed(2)}`);
+  logger.info(`분석 완료: ${patternDataset.issue_record_id}`);
+  logger.info(`품질 점수: ${patternDataset.validation_info.quality_score.toFixed(2)}`);
 }

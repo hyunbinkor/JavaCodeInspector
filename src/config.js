@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import logger from './utils/loggerUtils.js';
 
 dotenv.config();
 
@@ -214,60 +215,60 @@ export function validateConfig() {
 // 설정 초기화 및 검증
 const validation = validateConfig();
 if (!validation.isValid) {
-  console.error('❌ Config 검증 실패:');
-  validation.errors.forEach(error => console.error(`  - ${error}`));
+  logger.error('❌ Config 검증 실패:');
+  validation.errors.forEach(error => logger.error(`  - ${error}`));
   process.exit(1);
 }
 
 // 성공 메시지 출력
-console.log('='.repeat(60));
-console.log('✅ Config 검증 완료');
-console.log('='.repeat(60));
+logger.info('='.repeat(60));
+logger.info('✅ Config 검증 완료');
+logger.info('='.repeat(60));
 
 // LLM 설정 출력
-console.log(`\n📊 LLM 제공자: ${config.llm.provider.toUpperCase()}`);
+logger.info(`\n📊 LLM 제공자: ${config.llm.provider.toUpperCase()}`);
 if (config.llm.provider === 'ollama') {
-  console.log(`  📡 서버: ${config.llm.ollama.baseUrl}`);
-  console.log(`  🤖 모델: ${config.llm.ollama.model}`);
-  console.log(`  ⏱️  타임아웃: ${config.llm.ollama.timeout}ms`);
-  console.log(`  🔄 최대 재시도: ${config.llm.maxRetries}회`);
+  logger.info(`  📡 서버: ${config.llm.ollama.baseUrl}`);
+  logger.info(`  🤖 모델: ${config.llm.ollama.model}`);
+  logger.info(`  ⏱️  타임아웃: ${config.llm.ollama.timeout}ms`);
+  logger.info(`  🔄 최대 재시도: ${config.llm.maxRetries}회`);
   
   if (config.llm.enableChunking) {
-    console.log(`  📦 청킹: 활성화 (크기: ${config.llm.ollama.chunkSize}자)`);
+    logger.info(`  📦 청킹: 활성화 (크기: ${config.llm.ollama.chunkSize}자)`);
   }
 } else if (config.llm.provider === 'bedrock') {
-  console.log(`  🌎 리전: ${config.llm.bedrock.region}`);
-  console.log(`  🤖 모델: ${config.llm.bedrock.modelId.split('/').pop()}`);
-  console.log(`  🎯 최대 토큰: ${config.llm.bedrock.maxTokens}`);
-  console.log(`  🌡️  Temperature: ${config.llm.bedrock.temperature}`);
+  logger.info(`  🌎 리전: ${config.llm.bedrock.region}`);
+  logger.info(`  🤖 모델: ${config.llm.bedrock.modelId.split('/').pop()}`);
+  logger.info(`  🎯 최대 토큰: ${config.llm.bedrock.maxTokens}`);
+  logger.info(`  🌡️  Temperature: ${config.llm.bedrock.temperature}`);
 }
 
 // Vector DB 설정 출력
-console.log(`\n📊 Vector DB 제공자: ${config.vector.provider.toUpperCase()}`);
+logger.info(`\n📊 Vector DB 제공자: ${config.vector.provider.toUpperCase()}`);
 if (config.vector.provider === 'weaviate') {
-  console.log(`  📡 서버: ${config.vector.weaviate.url}`);
-  console.log(`  🔑 인증 모드: ${config.vector.weaviate.useAuth ? '사용' : '미사용'}`);
-  console.log(`  🧩 Embedding: ${config.vector.weaviate.embeddingModel}`);
-  console.log(`  📝 CodePattern 클래스: ${config.vector.codePatternName}`);
-  console.log(`  📋 Guideline 클래스: ${config.vector.guidelineName}`);
+  logger.info(`  📡 서버: ${config.vector.weaviate.url}`);
+  logger.info(`  🔑 인증 모드: ${config.vector.weaviate.useAuth ? '사용' : '미사용'}`);
+  logger.info(`  🧩 Embedding: ${config.vector.weaviate.embeddingModel}`);
+  logger.info(`  📝 CodePattern 클래스: ${config.vector.codePatternName}`);
+  logger.info(`  📋 Guideline 클래스: ${config.vector.guidelineName}`);
 } else if (config.vector.provider === 'qdrant') {
-  console.log(`  📡 서버: ${config.vector.qdrant.url}`);
-  console.log(`  🔑 인증: ${config.vector.qdrant.apiKey ? 'API Key 사용' : '미사용'}`);
-  console.log(`  📊 벡터 차원: ${config.vector.qdrant.vectorDimensions}`);
-  console.log(`  🎯 인덱스 파라미터: M=${config.vector.qdrant.indexParams.m}, EF=${config.vector.qdrant.indexParams.ef_construct}`);
-  console.log(`  📝 CodePattern 컬렉션: ${config.vector.qdrant.collectionNamePattern.replace('{type}', 'pattern')}`);
-  console.log(`  📋 Guideline 컬렉션: ${config.vector.qdrant.collectionNamePattern.replace('{type}', 'guideline')}`);
+  logger.info(`  📡 서버: ${config.vector.qdrant.url}`);
+  logger.info(`  🔑 인증: ${config.vector.qdrant.apiKey ? 'API Key 사용' : '미사용'}`);
+  logger.info(`  📊 벡터 차원: ${config.vector.qdrant.vectorDimensions}`);
+  logger.info(`  🎯 인덱스 파라미터: M=${config.vector.qdrant.indexParams.m}, EF=${config.vector.qdrant.indexParams.ef_construct}`);
+  logger.info(`  📝 CodePattern 컬렉션: ${config.vector.qdrant.collectionNamePattern.replace('{type}', 'pattern')}`);
+  logger.info(`  📋 Guideline 컬렉션: ${config.vector.qdrant.collectionNamePattern.replace('{type}', 'guideline')}`);
 }
 
 // 공통 Vector DB 설정
-console.log(`  🔄 최대 재시도: ${config.vector.maxRetries}회`);
-console.log(`  📏 유사도 임계값: ${config.vector.similarityThreshold}`);
+logger.info(`  🔄 최대 재시도: ${config.vector.maxRetries}회`);
+logger.info(`  📏 유사도 임계값: ${config.vector.similarityThreshold}`);
 
 // 애플리케이션 설정
-console.log(`\n⚙️  애플리케이션 설정:`);
-console.log(`  📦 배치 크기: ${config.app.batchSize}`);
-console.log(`  🔀 병렬 처리: ${config.app.enableParallelProcessing ? '활성화' : '비활성화'} (최대 ${config.app.maxParallelTasks}개)`);
-console.log(`  🛡️  Graceful Degradation: ${config.app.enableGracefulDegradation ? '활성화' : '비활성화'}`);
+logger.info(`\n⚙️  애플리케이션 설정:`);
+logger.info(`  📦 배치 크기: ${config.app.batchSize}`);
+logger.info(`  🔀 병렬 처리: ${config.app.enableParallelProcessing ? '활성화' : '비활성화'} (최대 ${config.app.maxParallelTasks}개)`);
+logger.info(`  🛡️  Graceful Degradation: ${config.app.enableGracefulDegradation ? '활성화' : '비활성화'}`);
 
-console.log('='.repeat(60));
-console.log('🚀 시스템 준비 완료!\n');
+logger.info('='.repeat(60));
+logger.info('🚀 시스템 준비 완료!\n');

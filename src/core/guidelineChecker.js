@@ -41,6 +41,7 @@
  */
 import { VectorClient } from '../clients/vectorClient.js';
 import { LLMService } from '../clients/llmService.js';
+import logger from '../utils/loggerUtils.js';
 /**
  * 개발가이드 전용 검사기 클래스 (Layer1 Component)
  * 
@@ -109,7 +110,7 @@ export class DevelopmentGuidelineChecker {
    * # PERFORMANCE: 규칙 로드 시간 측정 및 캐싱 적용
    */
   async initialize() {
-    console.log('📋 개발가이드 룰 로딩 중...');
+    logger.info('📋 개발가이드 룰 로딩 중...');
 
     // VectorDB에서 규칙 로드 (정적 + 컨텍스트)
     await this.loadGuidelineRules();
@@ -117,7 +118,7 @@ export class DevelopmentGuidelineChecker {
     // 하드코딩된 컨텍스트 규칙 로드
     await this.loadContextualGuidelines();
 
-    console.log(`✅ 개발가이드 룰 로딩 완료: 정적 ${this.staticRules.size}개, 맥락적 ${this.contextualRules.size}개`);
+    logger.info(`✅ 개발가이드 룰 로딩 완료: 정적 ${this.staticRules.size}개, 맥락적 ${this.contextualRules.size}개`);
   }
 
   /**
@@ -414,7 +415,7 @@ export class DevelopmentGuidelineChecker {
 
     // Step 2: 중복 제거 (같은 라인, 같은 규칙, 같은 컬럼)
     const uniqueViolations = this.deduplicateViolations(violations);
-    console.log(`  📊 정적 검사: ${violations.length}개 → 중복 제거 후 ${uniqueViolations.length}개`);
+    logger.info(`  📊 정적 검사: ${violations.length}개 → 중복 제거 후 ${uniqueViolations.length}개`);
 
     // Step 3: 컨텍스트 규칙 검사 (LLM 기반)
     let contextualViolations = [];
@@ -1029,18 +1030,18 @@ export class DevelopmentGuidelineChecker {
    * @returns {array} 컨텍스트 규칙 위반사항
    */
   async checkContextualRules(sourceCode, astAnalysis) {
-    console.log('  🤖 LLM 기반 맥락적 가이드라인 검사 시작...');
+    logger.info('  🤖 LLM 기반 맥락적 가이드라인 검사 시작...');
 
     const violations = [];
     
     // Step 1: keywords 기반 적용 가능한 규칙 필터링
     const applicableRules = this.filterApplicableContextualRules(sourceCode);
     if (applicableRules.length === 0) {
-      console.log('    해당 코드에 적용 가능한 맥락적 가이드라인 없음');
+      logger.info('    해당 코드에 적용 가능한 맥락적 가이드라인 없음');
       return violations;
     }
 
-    console.log(`    적용 가능한 맥락적 가이드라인: ${applicableRules.length}개`);
+    logger.info(`    적용 가능한 맥락적 가이드라인: ${applicableRules.length}개`);
 
     // Step 2: 배치 처리 (3개씩 묶어서 처리)
     const batchSize = 3;
@@ -1071,7 +1072,7 @@ export class DevelopmentGuidelineChecker {
       }
     }
 
-    console.log(`    맥락적 가이드라인 검사 완료: ${violations.length}개 위반 발견`);
+    logger.info(`    맥락적 가이드라인 검사 완료: ${violations.length}개 위반 발견`);
     return violations;
   }
 
@@ -1365,7 +1366,7 @@ ${rule.examples.bad.map(ex => `- ${ex}`).join('\n')}
    * @param {string} guidelineText - 가이드라인 텍스트
    */
   async importGuidelineText(guidelineText) {
-    console.log('📄 개발가이드 텍스트 파싱 중...');
+    logger.info('📄 개발가이드 텍스트 파싱 중...');
 
     // 텍스트를 섹션별로 파싱
     const sections = this.parseGuidelineText(guidelineText);
@@ -1379,7 +1380,7 @@ ${rule.examples.bad.map(ex => `- ${ex}`).join('\n')}
       }
     }
 
-    console.log(`✅ 가이드라인 import 완료: ${sections.length}개 규칙`);
+    logger.info(`✅ 가이드라인 import 완료: ${sections.length}개 규칙`);
   }
 
   /**
@@ -1462,7 +1463,7 @@ ${rule.examples.bad.map(ex => `- ${ex}`).join('\n')}
    * TODO: VectorDB 저장 로직 구현
    */
   async storeContextualGuideline(section) {
-    console.log(`맥락적 가이드라인 저장: ${section.id}`);
+    logger.info(`맥락적 가이드라인 저장: ${section.id}`);
     // TODO: VectorDB 저장 로직
   }
 
@@ -1477,7 +1478,7 @@ ${rule.examples.bad.map(ex => `- ${ex}`).join('\n')}
    * TODO: 패턴 자동 추출 및 저장 로직 구현
    */
   async storeStaticGuideline(section) {
-    console.log(`정적 가이드라인 저장: ${section.id}`);
+    logger.info(`정적 가이드라인 저장: ${section.id}`);
     // TODO: VectorDB 저장 로직
   }
 }

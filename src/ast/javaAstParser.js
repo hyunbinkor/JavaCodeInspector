@@ -1,4 +1,5 @@
 import javaParser from 'java-parser';
+// import logger from '../utils/loggerUtils';
 
 export class JavaASTParser {
   constructor() {
@@ -28,7 +29,7 @@ export class JavaASTParser {
   parseJavaCode(javaCode) {
     try {
       // java-parser 라이브러리가 완전하지 않아 정규식 기반 분석 사용
-      console.log('Java 코드 분석 중...');
+      // logger.info('Java 코드 분석 중...');
       const fallbackAnalysis = this.fallbackAnalysis(javaCode);
       
       return {

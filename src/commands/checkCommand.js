@@ -3,6 +3,7 @@ import { UnifiedJavaCodeChecker } from '../core/unifiedCodeChecker.js';
 import { buildOptimizedReport } from '../services/reportGeneratorService.js';
 import { displayUnifiedResults } from '../utils/displayUtils.js';
 import { loadData, saveJsonData } from '../utils/fileUtils.js';
+import logger from '../utils/loggerUtils.js';
 
 /**
  * 통합 코드 품질 검사 수행
@@ -16,12 +17,12 @@ import { loadData, saveJsonData } from '../utils/fileUtils.js';
  */
 export async function performUnifiedCheck(options) {
   if (!options.code) {
-    console.error('검사할 코드 파일을 지정해주세요: -c <file>');
+    logger.error('검사할 코드 파일을 지정해주세요: -c <file>');
     return;
   }
 
-  console.log('=== 통합 Java 코드 품질 검사 시작 ===');
-  console.log(`대상 파일: ${options.code}`);
+  logger.info('=== 통합 Java 코드 품질 검사 시작 ===');
+  logger.info(`대상 파일: ${options.code}`);
 
   const sourceCode = await loadData(options.code, 'sampleCode');
   const fileName = path.basename(options.code);
@@ -40,11 +41,11 @@ export async function performUnifiedCheck(options) {
     patternLimit: parseInt(options.limit)
   };
 
-  console.log('\n검사 범위:');
-  console.log(`- 개발가이드 검사: ${!checkOptions.skipGuidelines ? 'O' : 'X'}`);
-  console.log(`- 맥락적 가이드라인: ${!checkOptions.skipContextual ? 'O' : 'X'}`);
-  console.log(`- 패턴 분석: ${!checkOptions.skipPatterns ? 'O' : 'X'}`);
-  console.log(`- 자동 수정안: ${checkOptions.generateFixes ? 'O' : 'X'}`);
+  logger.info('\n검사 범위:');
+  logger.info(`- 개발가이드 검사: ${!checkOptions.skipGuidelines ? 'O' : 'X'}`);
+  logger.info(`- 맥락적 가이드라인: ${!checkOptions.skipContextual ? 'O' : 'X'}`);
+  logger.info(`- 패턴 분석: ${!checkOptions.skipPatterns ? 'O' : 'X'}`);
+  logger.info(`- 자동 수정안: ${checkOptions.generateFixes ? 'O' : 'X'}`);
 
   // AST 파싱 → 가이드라인 검사 → 패턴 검색 → 결과 통합 및 우선순위화
   const unifiedResults = await unifiedChecker.analyzeCode(sourceCode, checkOptions);
@@ -63,9 +64,9 @@ export async function performUnifiedCheck(options) {
     );
 
     await saveJsonData (optimizedReport, options.output, 'report');
-    console.log(`\n결과 저장: ${options.output}`);
-    console.log(`파일 크기: ${(JSON.stringify(optimizedReport).length / 1024).toFixed(2)} KB`);
+    logger.info(`\n결과 저장: ${options.output}`);
+    logger.info(`파일 크기: ${(JSON.stringify(optimizedReport).length / 1024).toFixed(2)} KB`);
   }
 
-  console.log('\n=== 통합 검사 완료 ===');
+  logger.info('\n=== 통합 검사 완료 ===');
 }

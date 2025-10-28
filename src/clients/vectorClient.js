@@ -107,6 +107,7 @@
 import { config } from '../config.js';
 import { WeaviateAdapter } from './adapters/weaviateAdapter.js';
 import { QdrantAdapter } from './adapters/qdrantAdapter.js';
+import logger from '../utils/loggerUtils.js'
 
 /**
  * 통합 Vector DB 클라이언트 클래스
@@ -159,7 +160,7 @@ export class VectorClient {
     this.codePatternName = config.vector.codePatternName;
     this.guidelineName = config.vector.guidelineName;
     
-    console.log(`\n=== Vector DB 제공자: ${this.provider.toUpperCase()} ===`);
+    logger.info(`\n=== Vector DB 제공자: ${this.provider.toUpperCase()} ===`);
   }
 
   /**
@@ -212,7 +213,7 @@ export class VectorClient {
    * # NOTE: 기존 데이터가 있는 경우 스키마 변경 주의
    */
   async initializeSchema() {
-    console.log('📋 Vector DB 스키마 초기화 중...');
+    logger.info('📋 Vector DB 스키마 초기화 중...');
     return await this.adapter.initializeSchema();
   }
 
@@ -427,13 +428,13 @@ export class VectorClient {
    * const extractor = new GuidelineExtractor();
    * const guidelines = await extractor.extract('rules.pdf');
    * const result = await client.batchImportGuidelines(guidelines);
-   * console.log(`성공: ${result.success}, 실패: ${result.failed}`);
+   * logger.info(`성공: ${result.success}, 실패: ${result.failed}`);
    * 
    * # NOTE: 대량 import 시 메모리 사용량 주의 (한 번에 100개 이하)
    * # PERFORMANCE: 배치 upsert로 최적화 가능 (adapter 구현 필요)
    */
   async batchImportGuidelines(guidelines) {
-    console.log(`📥 가이드라인 배치 import 시작: ${guidelines.length}개`);
+    logger.info(`📥 가이드라인 배치 import 시작: ${guidelines.length}개`);
 
     const results = {
       success: 0,
@@ -451,16 +452,16 @@ export class VectorClient {
           ruleId: guideline.ruleId,
           error: error.message
         });
-        console.error(`가이드라인 저장 오류 (${guideline.ruleId}):`, error.message);
+        logger.error(`가이드라인 저장 오류 (${guideline.ruleId}):`, error.message);
       }
     }
 
-    console.log(`✅ 배치 import 완료: 성공 ${results.success}개, 실패 ${results.failed}개`);
+    logger.info(`✅ 배치 import 완료: 성공 ${results.success}개, 실패 ${results.failed}개`);
 
     if (results.errors.length > 0) {
-      console.log('실패한 가이드라인들:');
+      logger.info('실패한 가이드라인들:');
       results.errors.forEach(({ ruleId, error }) => {
-        console.log(`  - ${ruleId}: ${error}`);
+        logger.info(`  - ${ruleId}: ${error}`);
       });
     }
 

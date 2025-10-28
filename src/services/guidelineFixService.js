@@ -3,7 +3,7 @@
  */
 
 import { cleanLLMCodeResponse, validateJavaCode } from '../utils/codeUtils.js';
-
+import logger from '../utils/loggerUtils.js';
 /**
  * 개별 가이드라인 위반사항에 대한 수정 제안 생성
  * 1. Cast Operator 등 특정 규칙의 오탐 필터링
@@ -20,7 +20,7 @@ export async function generateGuidelineFixSuggestion(issue, sourceCode, llmServi
   if (issue.ruleId === 'code_style.3_7_3' || issue.title?.includes('Cast Operator')) {
     const hasCastOperator = /\([A-Z][a-zA-Z0-9<>]*\)\s+[a-zA-Z]/.test(line);
     if (!hasCastOperator) {
-      console.log(`   ⚠️ 오탐 필터링: ${issue.line}번 라인에 Cast 연산자 없음 - "${line.trim()}"`);
+      logger.info(`   ⚠️ 오탐 필터링: ${issue.line}번 라인에 Cast 연산자 없음 - "${line.trim()}"`);
       return null;
     }
   }
@@ -81,7 +81,7 @@ ${contextCode}
       );
 
       if (isUncertain || (parsed.confidence && parsed.confidence < 0.6)) {
-        console.log(`   ⚠️ 신뢰도 낮음: ${issue.title} - LLM이 문제를 찾지 못함`);
+        logger.info(`   ⚠️ 신뢰도 낮음: ${issue.title} - LLM이 문제를 찾지 못함`);
         return null;
       }
 
@@ -141,7 +141,7 @@ ${issuesSummary}
       return fixedCode;
     }
   } catch (error) {
-    console.error('   전체 코드 수정 생성 실패:', error.message);
+    logger.error('   전체 코드 수정 생성 실패:', error.message);
   }
 
   return null;

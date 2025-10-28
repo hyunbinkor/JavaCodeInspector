@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { LLMClient } from './llmClient.js';
+import logger from '../utils/loggerUtils.js'
 
 /**
  * LLM 서비스 - 고수준 비즈니스 로직
@@ -23,9 +24,9 @@ export class LLMService {
     
     this.isQwen3 = this.model && this.model.toLowerCase().includes('qwen');
 
-    console.log(`🔧 LLM 서비스 초기화 완료 (제공자: ${config.llm.provider})`);
+    logger.info(`🔧 LLM 서비스 초기화 완료 (제공자: ${config.llm.provider})`);
     if (this.isQwen3) {
-      console.log('🔥 Qwen3 최적화 모드 활성화');
+      logger.info('🔥 Qwen3 최적화 모드 활성화');
     }
   }
 
@@ -37,10 +38,10 @@ export class LLMService {
     try {
       // LLMClient의 연결 테스트
       await this.llmClient.checkConnection();
-      console.log('✅ LLM 서비스 초기화 및 연결 확인 완료');
+      logger.info('✅ LLM 서비스 초기화 및 연결 확인 완료');
       return true;
     } catch (error) {
-      console.error('❌ LLM 서비스 초기화 실패:', error.message);
+      logger.error('❌ LLM 서비스 초기화 실패:', error.message);
       throw error;
     }
   }
@@ -78,10 +79,10 @@ export class LLMService {
       const strategy = strategies[i];
 
       try {
-        console.log(`🎯 전략 ${i + 1}/${strategies.length}: ${strategy.name} (temp: ${strategy.temp}, tokens: ${strategy.tokens})`);
+        logger.info(`🎯 전략 ${i + 1}/${strategies.length}: ${strategy.name} (temp: ${strategy.temp}, tokens: ${strategy.tokens})`);
 
         const prompt = this.createBasicPatternPrompt(issueData, strategy.name);
-        console.log(`   📝 ${strategy.name} 전략 프롬프트 길이: ${prompt.length}자`);
+        logger.info(`   📝 ${strategy.name} 전략 프롬프트 길이: ${prompt.length}자`);
 
         const options = {
           temperature: strategy.temp,
@@ -92,29 +93,29 @@ export class LLMService {
         };
 
         const response = await this.llmClient.generateCompletion(prompt, options);
-        console.log('📋 LLM 응답에서 JSON 추출 중...');
+        logger.info('📋 LLM 응답에서 JSON 추출 중...');
 
         const extractedJSON = this.extractJSONWithMultipleMethods(response);
 
         if (extractedJSON && this.validatePatternStructure(extractedJSON)) {
-          console.log(`✅ 전략 ${strategy.name}으로 JSON 추출 성공`);
+          logger.info(`✅ 전략 ${strategy.name}으로 JSON 추출 성공`);
           return this.enhanceExtractedPattern(extractedJSON, issueData);
         } else {
-          console.log(`❌ 전략 ${strategy.name} JSON 추출 실패`);
+          logger.info(`❌ 전략 ${strategy.name} JSON 추출 실패`);
         }
 
       } catch (error) {
-        console.error(`❌ 전략 ${strategy.name} 오류:`, error.message);
+        logger.error(`❌ 전략 ${strategy.name} 오류:`, error.message);
         lastError = error;
 
         if (i === 0) {
-          console.log('⏳ 첫 번째 전략 실패, 5초 후 다음 전략 시도...');
+          logger.info('⏳ 첫 번째 전략 실패, 5초 후 다음 전략 시도...');
           await new Promise(resolve => setTimeout(resolve, 5000));
         }
       }
     }
 
-    console.log('⚠️ 모든 전략 실패, 폴백 패턴 사용');
+    logger.info('⚠️ 모든 전략 실패, 폴백 패턴 사용');
     return this.createEnhancedFallbackPattern(issueData, lastError);
   }
 
@@ -134,20 +135,20 @@ export class LLMService {
         max_tokens: 2000
       });
 
-      console.log('🔍 프레임워크 분석 결과에서 JSON 추출 중...');
+      logger.info('🔍 프레임워크 분석 결과에서 JSON 추출 중...');
       const extractedJSON = this.extractJSONWithMultipleMethods(response);
 
       if (extractedJSON) {
-        console.log('✅ 프레임워크 분석 JSON 추출 성공');
+        logger.info('✅ 프레임워크 분석 JSON 추출 성공');
         return extractedJSON;
       } else {
-        console.log('❌ 프레임워크 분석 JSON 추출 실패, 폴백 사용');
+        logger.info('❌ 프레임워크 분석 JSON 추출 실패, 폴백 사용');
         return this.createFallbackFrameworkContext(detectedAnnotations, detectedClasses);
       }
 
     } catch (error) {
-      console.error('❌ 프레임워크 분석 오류:', error.message);
-      console.log('⚠️ 폴백 분석 결과를 사용합니다');
+      logger.error('❌ 프레임워크 분석 오류:', error.message);
+      logger.info('⚠️ 폴백 분석 결과를 사용합니다');
       return this.createFallbackFrameworkContext(detectedAnnotations, detectedClasses);
     }
   }
@@ -157,7 +158,7 @@ export class LLMService {
    * checkType, businessRules, patterns 등의 필드로 변환
    */
   async generateGuidelineAnalysis(prompt, options = {}) {
-    console.log('🧠 가이드라인 분석 요청 처리 중...');
+    logger.info('🧠 가이드라인 분석 요청 처리 중...');
 
     try {
       const response = await this.generateCompletion(prompt, {
@@ -205,7 +206,7 @@ export class LLMService {
       };
 
     } catch (error) {
-      console.error('❌ 가이드라인 분석 중 오류:', error.message);
+      logger.error('❌ 가이드라인 분석 중 오류:', error.message);
       throw error;
     }
   }
@@ -320,7 +321,7 @@ export class LLMService {
    */
   validatePatternStructure(pattern) {
     if (!pattern || typeof pattern !== 'object') {
-      console.log('❌ 패턴이 객체가 아닙니다');
+      logger.info('❌ 패턴이 객체가 아닙니다');
       return false;
     }
 
@@ -329,11 +330,11 @@ export class LLMService {
 
     if (!hasAllFields) {
       const missingFields = requiredFields.filter(field => !(field in pattern));
-      console.log(`❌ 필수 필드 누락: ${missingFields.join(', ')}`);
+      logger.info(`❌ 필수 필드 누락: ${missingFields.join(', ')}`);
       return false;
     }
 
-    console.log('✅ 패턴 구조 검증 완료');
+    logger.info('✅ 패턴 구조 검증 완료');
     return true;
   }
 
@@ -656,7 +657,7 @@ ${issueData.fixedCode}
    * issueData 정보를 기반으로 최소한의 유효한 패턴 구조 제공
    */
   createEnhancedFallbackPattern(issueData, error) {
-    console.log('🔧 향상된 폴백 패턴 생성 중...');
+    logger.info('🔧 향상된 폴백 패턴 생성 중...');
 
     return {
       metadata: {

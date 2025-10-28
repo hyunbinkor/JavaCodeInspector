@@ -105,6 +105,7 @@ import { issueCodeAnalyzer } from './issueCodeAnalyzer.js';
 import { VectorClient } from '../clients/vectorClient.js';
 import { PatternDatasetGenerator } from './patternGenerator.js';
 import { DevelopmentGuidelineChecker } from './guidelineChecker.js';
+import logger from '../utils/loggerUtils.js';
 import { config } from '../config.js';
 
 /**
@@ -199,7 +200,7 @@ export class UnifiedJavaCodeChecker {
    * # PERFORMANCE: 초기화 시간 측정 및 로깅
    */
   async initialize() {
-    console.log('🚀 통합 코드 품질 검사 시스템 초기화 중...');
+    logger.info('🚀 통합 코드 품질 검사 시스템 초기화 중...');
 
     // LLM API 연결 상태 확인 - 실패 시 에러 throw
     const isConnected = await this.llmService.checkConnection();
@@ -211,7 +212,7 @@ export class UnifiedJavaCodeChecker {
     await this.issueCodeAnalyzer.initialize();
     await this.guidelineChecker.initialize();
 
-    console.log('✅ 통합 시스템 초기화 완료');
+    logger.info('✅ 통합 시스템 초기화 완료');
   }
 
   /**
@@ -234,7 +235,7 @@ export class UnifiedJavaCodeChecker {
    */
   async analyzeCode(sourceCode, options = {}) {
     const startTime = Date.now();
-    console.log('📊 통합 코드 분석 시작...');
+    logger.info('📊 통합 코드 분석 시작...');
 
     // Java 코드를 AST로 파싱 - 클래스, 메서드, 변수 등 구조 정보 추출
     const astAnalysis = this.astParser.parseJavaCode(sourceCode);
@@ -298,7 +299,7 @@ export class UnifiedJavaCodeChecker {
       }
     } catch (error) {
       // 개별 검사 실패 시에도 다른 검사 결과는 유지 (부분 성공 허용)
-      console.error('검사 실행 중 오류:', error.message);
+      logger.error('검사 실행 중 오류:', error.message);
     }
 
     // 가이드라인 + 패턴 결과를 하나의 통합 리포트로 병합
@@ -311,7 +312,7 @@ export class UnifiedJavaCodeChecker {
     );
 
     const duration = Date.now() - startTime;
-    console.log(`✅ 통합 분석 완료 (${duration}ms)`);
+    logger.info(`✅ 통합 분석 완료 (${duration}ms)`);
 
     return unifiedResults;
   }
@@ -333,7 +334,7 @@ export class UnifiedJavaCodeChecker {
    *   - categories: 카테고리별 그룹핑된 이슈
    */
   async performGuidelineCheck(sourceCode, astAnalysis, options = {}) {
-    console.log('📋 개발가이드 규칙 검사 중...');
+    logger.info('📋 개발가이드 규칙 검사 중...');
 
     const results = {
       violations: [],
@@ -359,7 +360,7 @@ export class UnifiedJavaCodeChecker {
     // 위반사항과 경고 개수 기반 점수 계산
     results.styleScore = this.calculateStyleScore(results);
 
-    console.log(`  📊 가이드라인 검사 결과: ${results.violations.length}개 위반, ${results.warnings.length}개 경고`);
+    logger.info(`  📊 가이드라인 검사 결과: ${results.violations.length}개 위반, ${results.warnings.length}개 경고`);
     return results;
   }
 
@@ -386,7 +387,7 @@ export class UnifiedJavaCodeChecker {
    *   - patternClassification: 안전/위험 패턴 분류
    */
   async performPatternAnalysis(sourceCode, astAnalysis, options = {}) {
-    console.log('🔍 패턴 분석 검사 중...');
+    logger.info('🔍 패턴 분석 검사 중...');
 
     try {
       // Step 1: 패턴 데이터셋 생성기 초기화 및 임베딩 생성
@@ -408,7 +409,7 @@ export class UnifiedJavaCodeChecker {
 
       // 유사 패턴이 없으면 분석 종료 (비교 대상 없음)
       if (similarPatterns.length === 0) {
-        console.log('  📄 유사 패턴을 찾을 수 없음');
+        logger.info('  📄 유사 패턴을 찾을 수 없음');
         return {
           detectedIssues: [],
           similarPatterns: [],
@@ -420,7 +421,7 @@ export class UnifiedJavaCodeChecker {
       // - 리소스 누수, 보안 취약점, 성능 문제 등 분류
       const analysisResults = await this.issueCodeAnalyzer.analyzeCodeIssues(sourceCode, similarPatterns);
 
-      console.log(`  🔎 패턴 분석 결과: ${analysisResults.detectedIssues.length}개 패턴 이슈 발견`);
+      logger.info(`  🔎 패턴 분석 결과: ${analysisResults.detectedIssues.length}개 패턴 이슈 발견`);
       return {
         detectedIssues: analysisResults.detectedIssues,
         similarPatterns: similarPatterns,
@@ -471,7 +472,7 @@ export class UnifiedJavaCodeChecker {
    * @returns {object} 통합 분석 리포트
    */
   async unifyResults(guidelineResults, patternResults, sourceCode, options) {
-    console.log('🔗 검사 결과 통합 중...');
+    logger.info('🔗 검사 결과 통합 중...');
 
     try {
       // Step 1: 입력 검증 - null/undefined 방어 및 기본값 설정
@@ -503,9 +504,9 @@ export class UnifiedJavaCodeChecker {
       patternResults.detectedIssues = Array.isArray(patternResults.detectedIssues) ? patternResults.detectedIssues : [];
       patternResults.similarPatterns = Array.isArray(patternResults.similarPatterns) ? patternResults.similarPatterns : [];
 
-      console.log(`  가이드라인 위반: ${guidelineResults.violations.length}개`);
-      console.log(`  가이드라인 경고: ${guidelineResults.warnings.length}개`);
-      console.log(`  패턴 이슈: ${patternResults.detectedIssues.length}개`);
+      logger.info(`  가이드라인 위반: ${guidelineResults.violations.length}개`);
+      logger.info(`  가이드라인 경고: ${guidelineResults.warnings.length}개`);
+      logger.info(`  패턴 이슈: ${patternResults.detectedIssues.length}개`);
 
       // Step 2: 통합 리포트 기본 구조 생성
       const unifiedReport = {
@@ -591,7 +592,7 @@ export class UnifiedJavaCodeChecker {
 
     } catch (error) {
       // 통합 프로세스 실패 시 기본 구조만 반환 (에러 정보 포함)
-      console.error('❌ unifyResults 실행 중 오류:', error.message);
+      logger.error('❌ unifyResults 실행 중 오류:', error.message);
 
       return {
         overview: {
@@ -666,7 +667,7 @@ export class UnifiedJavaCodeChecker {
         });
       });
     } catch (error) {
-      console.error('violations 처리 실패:', error.message);
+      logger.error('violations 처리 실패:', error.message);
     }
 
     try {
@@ -687,7 +688,7 @@ export class UnifiedJavaCodeChecker {
         });
       });
     } catch (error) {
-      console.error('detectedIssues 처리 실패:', error.message);
+      logger.error('detectedIssues 처리 실패:', error.message);
     }
 
     // Step 3: 다층 정렬 알고리즘 적용

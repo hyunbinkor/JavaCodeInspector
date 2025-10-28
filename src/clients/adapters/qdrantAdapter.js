@@ -1,6 +1,7 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { config } from '../../config.js';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../../utils/loggerUtils.js'
 
 /**
  * Qdrant Vector DB Adapter
@@ -24,9 +25,9 @@ export class QdrantAdapter {
     // API 키가 있으면 추가
     if (qdrantConfig.apiKey) {
       clientOptions.apiKey = qdrantConfig.apiKey;
-      console.log('🔐 Qdrant API Key 인증 사용');
+      logger.info('🔐 Qdrant API Key 인증 사용');
     } else {
-      console.log('🔓 Qdrant 익명 접근 모드');
+      logger.info('🔓 Qdrant 익명 접근 모드');
     }
 
     return new QdrantClient(clientOptions);
@@ -37,26 +38,26 @@ export class QdrantAdapter {
       // CodePattern 컬렉션 처리
       const patternExists = await this.collectionExists(this.codePatternCollectionName);
       if (patternExists) {
-        console.log(`✅ 기존 ${this.codePatternCollectionName} 컬렉션 확인됨`);
+        logger.info(`✅ 기존 ${this.codePatternCollectionName} 컬렉션 확인됨`);
       } else {
-        console.log(`🔨 ${this.codePatternCollectionName} 컬렉션 생성 중...`);
+        logger.info(`🔨 ${this.codePatternCollectionName} 컬렉션 생성 중...`);
         await this.createCodePatternCollection();
-        console.log(`✅ ${this.codePatternCollectionName} 컬렉션 생성 완료`);
+        logger.info(`✅ ${this.codePatternCollectionName} 컬렉션 생성 완료`);
       }
 
       // Guideline 컬렉션 처리
       const guidelineExists = await this.collectionExists(this.guidelineCollectionName);
       if (guidelineExists) {
-        console.log(`✅ 기존 ${this.guidelineCollectionName} 컬렉션 확인됨`);
+        logger.info(`✅ 기존 ${this.guidelineCollectionName} 컬렉션 확인됨`);
       } else {
-        console.log(`🔨 ${this.guidelineCollectionName} 컬렉션 생성 중...`);
+        logger.info(`🔨 ${this.guidelineCollectionName} 컬렉션 생성 중...`);
         await this.createGuidelineCollection();
-        console.log(`✅ ${this.guidelineCollectionName} 컬렉션 생성 완료`);
+        logger.info(`✅ ${this.guidelineCollectionName} 컬렉션 생성 완료`);
       }
 
-      console.log('✅ 모든 컬렉션 초기화 완료');
+      logger.info('✅ 모든 컬렉션 초기화 완료');
     } catch (error) {
-      console.error('❌ 컬렉션 초기화 실패:', error.message);
+      logger.error('❌ 컬렉션 초기화 실패:', error.message);
       throw error;
     }
   }
@@ -66,7 +67,7 @@ export class QdrantAdapter {
       const collections = await this.client.getCollections();
       return collections.collections.some(c => c.name === collectionName);
     } catch (error) {
-      console.error(`컬렉션 존재 확인 오류 (${collectionName}):`, error.message);
+      logger.error(`컬렉션 존재 확인 오류 (${collectionName}):`, error.message);
       return false;
     }
   }
@@ -74,11 +75,11 @@ export class QdrantAdapter {
   async createCodePatternCollection() {
     const indexParams = config.vector.qdrant.indexParams;
     
-    console.log(`📋 CodePattern 컬렉션 생성 파라미터:`);
-    console.log(`   - 벡터 차원: ${this.vectorDimensions}`);
-    console.log(`   - 거리 측정: Cosine`);
-    console.log(`   - HNSW M: ${indexParams.m}`);
-    console.log(`   - HNSW EF: ${indexParams.ef_construct}`);
+    logger.info(`📋 CodePattern 컬렉션 생성 파라미터:`);
+    logger.info(`   - 벡터 차원: ${this.vectorDimensions}`);
+    logger.info(`   - 거리 측정: Cosine`);
+    logger.info(`   - HNSW M: ${indexParams.m}`);
+    logger.info(`   - HNSW EF: ${indexParams.ef_construct}`);
     
     await this.client.createCollection(this.codePatternCollectionName, {
       vectors: {
@@ -107,9 +108,9 @@ export class QdrantAdapter {
   async createGuidelineCollection() {
     const indexParams = config.vector.qdrant.indexParams;
     
-    console.log(`📋 Guideline 컬렉션 생성 파라미터:`);
-    console.log(`   - 벡터 차원: ${this.vectorDimensions}`);
-    console.log(`   - 거리 측정: Cosine`);
+    logger.info(`📋 Guideline 컬렉션 생성 파라미터:`);
+    logger.info(`   - 벡터 차원: ${this.vectorDimensions}`);
+    logger.info(`   - 거리 측정: Cosine`);
     
     await this.client.createCollection(this.guidelineCollectionName, {
       vectors: {
@@ -163,9 +164,9 @@ export class QdrantAdapter {
       
       // 벡터 차원 검증 (조정하지 않음)
       if (vector.length !== this.vectorDimensions) {
-        console.error(`❌ 벡터 차원 불일치: ${vector.length} !== ${this.vectorDimensions}`);
-        console.error(`   패턴 ID: ${dataset.issue_record_id}`);
-        console.error(`   ⚠️ 임베딩 생성 로직을 확인하세요`);
+        logger.error(`❌ 벡터 차원 불일치: ${vector.length} !== ${this.vectorDimensions}`);
+        logger.error(`   패턴 ID: ${dataset.issue_record_id}`);
+        logger.error(`   ⚠️ 임베딩 생성 로직을 확인하세요`);
         
         // 에러 대신 경고만 표시하고 더미 벡터 사용
         console.warn(`   더미 벡터로 대체하여 저장 진행`);
@@ -174,14 +175,11 @@ export class QdrantAdapter {
       
       // 벡터 유효성 검증
       if (!this.validateVector(vector)) {
-        console.error(`❌ 벡터에 유효하지 않은 값 포함: ${dataset.issue_record_id}`);
+        logger.error(`❌ 벡터에 유효하지 않은 값 포함: ${dataset.issue_record_id}`);
         throw new Error('Vector contains NaN, Infinity, or non-numeric values');
       }
       
-      // 벡터 정규화 (Cosine 유사도는 정규화된 벡터에서 더 잘 작동)
-      vector = this.normalizeVector(vector);
-      
-      console.log(`📊 벡터 정보: 차원=${vector.length}, 범위=[${Math.min(...vector).toFixed(4)}, ${Math.max(...vector).toFixed(4)}]`);
+      logger.info(`📊 벡터 정보: 차원=${vector.length}, 범위=[${Math.min(...vector).toFixed(4)}, ${Math.max(...vector).toFixed(4)}]`);
 
       // Payload 준비 - 모든 배열을 JSON 문자열로 변환
       const payload = {
@@ -203,7 +201,7 @@ export class QdrantAdapter {
         maxDepth: Number(dataset.embeddings?.ast_analysis?.maxDepth ?? 1)
       };
 
-      console.log(`📦 Payload 크기: ${JSON.stringify(payload).length} bytes`);
+      logger.info(`📦 Payload 크기: ${JSON.stringify(payload).length} bytes`);
 
       const point = {
         id,
@@ -211,26 +209,26 @@ export class QdrantAdapter {
         payload
       };
 
-      console.log(`💾 Qdrant에 저장 시도 중... (컬렉션: ${this.codePatternCollectionName})`);
+      logger.info(`💾 Qdrant에 저장 시도 중... (컬렉션: ${this.codePatternCollectionName})`);
 
       await this.client.upsert(this.codePatternCollectionName, {
         wait: true,
         points: [point]
       });
 
-      console.log(`✅ 패턴 저장 완료: ${dataset.issue_record_id}`);
+      logger.info(`✅ 패턴 저장 완료: ${dataset.issue_record_id}`);
     } catch (error) {
-      console.error(`❌ 패턴 저장 오류 (${dataset.issue_record_id}):`);
-      console.error(`   메시지: ${error.message}`);
-      console.error(`   상태 코드: ${error.status || 'N/A'}`);
+      logger.error(`❌ 패턴 저장 오류 (${dataset.issue_record_id}):`);
+      logger.error(`   메시지: ${error.message}`);
+      logger.error(`   상태 코드: ${error.status || 'N/A'}`);
       
       if (error.data) {
-        console.error('   상세 오류:', JSON.stringify(error.data, null, 2));
+        logger.error('   상세 오류:', JSON.stringify(error.data, null, 2));
       }
       
       // 스택 트레이스 출력
       if (error.stack) {
-        console.error('   스택:', error.stack.split('\n').slice(0, 3).join('\n'));
+        logger.error('   스택:', error.stack.split('\n').slice(0, 3).join('\n'));
       }
       
       throw error;
@@ -252,51 +250,30 @@ export class QdrantAdapter {
     });
   }
 
-  /**
-   * 벡터 정규화 (L2 normalization)
-   * Cosine 유사도는 정규화된 벡터에서 내적으로 계산 가능
-   */
-  normalizeVector(vector) {
-    const magnitude = Math.sqrt(
-      vector.reduce((sum, val) => sum + val * val, 0)
-    );
-    
-    // 0 벡터 방지
-    if (magnitude === 0 || !isFinite(magnitude)) {
-      console.warn('⚠️ 0 벡터 또는 무한대 벡터 감지, 정규화 스킵');
-      return vector;
-    }
-    
-    return vector.map(val => val / magnitude);
-  }
-
   async searchSimilarPatterns(queryVector, limit = 5, threshold = 0.7) {
     try {
       // 검색 벡터 검증
       if (!this.validateVector(queryVector)) {
-        console.error('❌ 검색 벡터가 유효하지 않음');
+        logger.error('❌ 검색 벡터가 유효하지 않음');
         return [];
       }
       
-      // 검색 벡터 정규화 (저장 시와 동일하게)
-      const normalizedQuery = this.normalizeVector(queryVector);
-      
-      console.log(`🔍 검색 시작: 차원=${normalizedQuery.length}, threshold=${threshold}, limit=${limit}`);
-      console.log(`🔍 벡터 샘플: [${normalizedQuery.slice(0, 5).map(v => v.toFixed(4)).join(', ')}...]`);
+      logger.info(`🔍 검색 시작: 차원=${queryVector.length}, threshold=${threshold}, limit=${limit}`);
+      logger.info(`🔍 벡터 샘플: [${queryVector.slice(0, 5).map(v => v.toFixed(4)).join(', ')}...]`);
       
       const searchResult = await this.client.search(this.codePatternCollectionName, {
-        vector: normalizedQuery,
+        vector: queryVector,
         limit,
         score_threshold: threshold,
         with_payload: true,
         with_vector: false  // 결과에 벡터 포함 안 함 (성능 향상)
       });
 
-      console.log(`✅ 검색 완료: ${searchResult.length}개 결과 발견`);
+      logger.info(`✅ 검색 완료: ${searchResult.length}개 결과 발견`);
       
       if (searchResult.length > 0) {
-        console.log(`   최고 점수: ${searchResult[0].score.toFixed(4)}`);
-        console.log(`   최저 점수: ${searchResult[searchResult.length - 1].score.toFixed(4)}`);
+        logger.info(`   최고 점수: ${searchResult[0].score.toFixed(4)}`);
+        logger.info(`   최저 점수: ${searchResult[searchResult.length - 1].score.toFixed(4)}`);
       }
 
       return searchResult.map(result => ({
@@ -313,9 +290,9 @@ export class QdrantAdapter {
         fullData: JSON.parse(result.payload.patternData || '{}')
       }));
     } catch (error) {
-      console.error('❌ 유사 패턴 검색 오류:', error.message);
+      logger.error('❌ 유사 패턴 검색 오류:', error.message);
       if (error.data) {
-        console.error('   상세:', JSON.stringify(error.data, null, 2));
+        logger.error('   상세:', JSON.stringify(error.data, null, 2));
       }
       return [];
     }
@@ -336,7 +313,7 @@ export class QdrantAdapter {
         severity: point.payload.severity
       }));
     } catch (error) {
-      console.error('전체 패턴 조회 오류:', error.message);
+      logger.error('전체 패턴 조회 오류:', error.message);
       return [];
     }
   }
@@ -366,8 +343,6 @@ export class QdrantAdapter {
         console.warn(`⚠️ 가이드라인 벡터 유효하지 않음, 더미 벡터 사용`);
         vector = this.createDummyVector();
       }
-      
-      vector = this.normalizeVector(vector);
 
       const point = {
         id,
@@ -393,12 +368,12 @@ export class QdrantAdapter {
         points: [point]
       });
 
-      console.log(`✅ 가이드라인 저장 완료: ${guideline.ruleId}`);
+      logger.info(`✅ 가이드라인 저장 완료: ${guideline.ruleId}`);
       return id;
     } catch (error) {
-      console.error(`가이드라인 저장 오류 (${guideline.ruleId}):`, error.message);
+      logger.error(`가이드라인 저장 오류 (${guideline.ruleId}):`, error.message);
       if (error.data) {
-        console.error('상세 오류:', JSON.stringify(error.data, null, 2));
+        logger.error('상세 오류:', JSON.stringify(error.data, null, 2));
       }
       throw error;
     }
@@ -441,7 +416,7 @@ export class QdrantAdapter {
         isActive: point.payload.isActive
       }));
     } catch (error) {
-      console.error('가이드라인 검색 오류:', error.message);
+      logger.error('가이드라인 검색 오류:', error.message);
       return [];
     }
   }
@@ -474,7 +449,7 @@ export class QdrantAdapter {
         message: point.payload.message
       }));
     } catch (error) {
-      console.error('키워드 기반 가이드라인 검색 오류:', error.message);
+      logger.error('키워드 기반 가이드라인 검색 오류:', error.message);
       return [];
     }
   }
@@ -500,9 +475,9 @@ export class QdrantAdapter {
         points: [point.id]
       });
 
-      console.log(`✅ 가이드라인 상태 업데이트 완료: ${ruleId} -> ${isActive}`);
+      logger.info(`✅ 가이드라인 상태 업데이트 완료: ${ruleId} -> ${isActive}`);
     } catch (error) {
-      console.error(`가이드라인 상태 업데이트 오류 (${ruleId}):`, error.message);
+      logger.error(`가이드라인 상태 업데이트 오류 (${ruleId}):`, error.message);
       throw error;
     }
   }
@@ -526,9 +501,9 @@ export class QdrantAdapter {
         points: [point.id]
       });
 
-      console.log(`✅ 가이드라인 삭제 완료: ${ruleId}`);
+      logger.info(`✅ 가이드라인 삭제 완료: ${ruleId}`);
     } catch (error) {
-      console.error(`가이드라인 삭제 오류 (${ruleId}):`, error.message);
+      logger.error(`가이드라인 삭제 오류 (${ruleId}):`, error.message);
       throw error;
     }
   }
@@ -556,7 +531,7 @@ export class QdrantAdapter {
         maxDepth: point.payload.maxDepth
       }));
     } catch (error) {
-      console.error('AST 패턴 검색 오류:', error.message);
+      logger.error('AST 패턴 검색 오류:', error.message);
       return [];
     }
   }
@@ -589,7 +564,7 @@ export class QdrantAdapter {
         qualityScore: point.payload.qualityScore
       }));
     } catch (error) {
-      console.error('복잡도 기반 검색 오류:', error.message);
+      logger.error('복잡도 기반 검색 오류:', error.message);
       return [];
     }
   }
@@ -599,9 +574,9 @@ export class QdrantAdapter {
       await this.client.delete(this.codePatternCollectionName, {
         points: [patternId]
       });
-      console.log(`✅ 패턴 삭제 완료: ${patternId}`);
+      logger.info(`✅ 패턴 삭제 완료: ${patternId}`);
     } catch (error) {
-      console.error(`패턴 삭제 오류 (${patternId}):`, error.message);
+      logger.error(`패턴 삭제 오류 (${patternId}):`, error.message);
       throw error;
     }
   }
@@ -609,10 +584,10 @@ export class QdrantAdapter {
   async checkConnection() {
     try {
       await this.client.getCollections();
-      console.log('✅ Qdrant 연결 성공');
+      logger.info('✅ Qdrant 연결 성공');
       return true;
     } catch (error) {
-      console.error('Qdrant 연결 실패:', error.message);
+      logger.error('Qdrant 연결 실패:', error.message);
       return false;
     }
   }
@@ -644,7 +619,7 @@ export class QdrantAdapter {
         totalObjects: (patternInfo.points_count || 0) + (guidelineInfo.points_count || 0)
       };
     } catch (error) {
-      console.error('시스템 상태 조회 오류:', error.message);
+      logger.error('시스템 상태 조회 오류:', error.message);
       return { codePatterns: 0, guidelines: 0, totalObjects: 0 };
     }
   }
@@ -692,11 +667,11 @@ export class QdrantAdapter {
       zeroRatio: vector.filter(v => v === 0).length / vector.length
     };
     
-    console.log(`📊 ${label} 통계:`);
-    console.log(`   차원: ${stats.dimension}`);
-    console.log(`   범위: [${stats.min.toFixed(4)}, ${stats.max.toFixed(4)}]`);
-    console.log(`   평균: ${stats.mean.toFixed(4)}`);
-    console.log(`   0이 아닌 값: ${stats.nonZeroCount} (${((1-stats.zeroRatio)*100).toFixed(1)}%)`);
+    logger.info(`📊 ${label} 통계:`);
+    logger.info(`   차원: ${stats.dimension}`);
+    logger.info(`   범위: [${stats.min.toFixed(4)}, ${stats.max.toFixed(4)}]`);
+    logger.info(`   평균: ${stats.mean.toFixed(4)}`);
+    logger.info(`   0이 아닌 값: ${stats.nonZeroCount} (${((1-stats.zeroRatio)*100).toFixed(1)}%)`);
     
     return stats;
   }
