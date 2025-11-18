@@ -17,10 +17,10 @@ export async function extractGuidelinesFromPDF(options) {
   logger.info(`입력 파일: ${options.input}`);
   logger.info(`출력 파일: ${options.output}`);
   logger.info(`작업 디렉토리: ${process.cwd()}`);
-  logger.info(`절대 경로: ${path.resolve(options.input)}`);
+  logger.info(`절대 경로: ${path.resolve('document', 'development_guide', options.input)}`);
 
   // PDF 파일 존재 여부 및 크기 확인
-  const inputPath = path.resolve(options.input);
+  const inputPath = path.resolve('document', 'development_guide', options.input);
   try {
     await fs.access(inputPath);
     const stats = await fs.stat(inputPath);
