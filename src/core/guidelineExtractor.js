@@ -1,14 +1,14 @@
 /**
- * PDF 가이드라인 추출기 (GuidelineExtractor)
+ * 가이드라인 추출기 (GuidelineExtractor)
  * 
- * 금융권 개발 가이드 PDF에서 코딩 규칙을 추출하고 구조화하는 컴포넌트
- * - PDF 텍스트 추출 (pdf2json 사용)
+ * 금융권 개발 가이드 문서(PDF/DOCX)에서 코딩 규칙을 추출하고 구조화하는 컴포넌트
+ * - 문서 텍스트 추출 (PDF: pdf2json, DOCX: mammoth)
  * - 정규식 기반 기본 파싱
- * - vLLM 기반 심화 분석 및 구조화
+ * - LLM 기반 심화 분석 및 구조화
  * - Cast Operator 등 복잡한 규칙에 대한 커스텀 검증 지원
  * 
  * 추출 프로세스:
- * 1. extractFromPDF() → PDF 파일 읽기 및 텍스트 추출
+ * 1. extractFromDocument() → 문서 파일 읽기 및 텍스트 추출 (PDF/DOCX)
  * 2. parseTextContent() → 목차 제거, 섹션 분리
  * 3. parseSections() → 번호 기반 섹션 파싱 (2.1, 3.2.1 형식)
  * 4. extractGuidelineFromSection() → 기본 가이드라인 추출
@@ -33,19 +33,13 @@
  * }
  * 
  * @module GuidelineExtractor
- * @requires PDFParser - PDF 텍스트 추출 (pdf2json)
- * @requires LLMService - vLLM 기반 규칙 구조화
- * 
- * # TODO: Node.js → Python 변환 (PyPDF2 또는 pdfplumber 사용)
- * # TODO: PDFParser → pdfplumber.open() 변환
- * # TODO: LLM 프롬프트 → Python 템플릿 (Jinja2)
- * # NOTE: 금융권 PDF는 보안 제한 가능 (암호화, 복사 방지)
- * # PERFORMANCE: 대용량 PDF (100+ 페이지) 메모리 최적화 필요
+ * @requires DocumentExtractor - PDF/DOCX 통합 추출기
+ * @requires LLMService - LLM 기반 규칙 구조화
  */
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import PDFParser from 'pdf2json';
+import { DocumentExtractor } from '../utils/documentExtractor.js';
 import { LLMService } from '../clients/llmService.js';
 import { saveJsonData } from '../utils/fileUtils.js';
 import logger from '../utils/loggerUtils.js';
@@ -54,24 +48,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * PDF 가이드라인 추출기 클래스
+ * 가이드라인 추출기 클래스
  * 
  * 내부 구조:
  * - guidelines: Array - 최종 추출된 가이드라인 배열
- * - extractedText: string - PDF에서 추출한 전체 텍스트
+ * - extractedText: string - 문서에서 추출한 전체 텍스트
  * - seenSections: Map<sectionNumber, guideline> - 중복 섹션 방지용
  * - llmService: LLMService 인스턴스 - LLM 기반 심화 분석
  * - rawChunks: Array - LLM 처리 전 기본 추출 결과
+ * - documentExtractor: DocumentExtractor - PDF/DOCX 통합 추출기
  * 
  * 추출 전략:
  * - 기본 추출: 정규식 + 섹션 번호 파싱 (빠름, 정확도 중간)
- * - 심화 분석: vLLM 기반 구조화 (느림, 정확도 높음)
+ * - 심화 분석: LLM 기반 구조화 (느림, 정확도 높음)
  * - 하이브리드: 기본 추출 → LLM으로 보완 (권장)
  * 
  * @class
- * 
- * # TODO: Python 클래스 변환 (PyPDF2/pdfplumber 사용)
- * # PERFORMANCE: 대용량 PDF 스트리밍 처리 (페이지별 청킹)
  */
 export class GuidelineExtractor {
   /**
@@ -83,17 +75,17 @@ export class GuidelineExtractor {
    * 3. seenSections Map 생성 (중복 방지)
    * 4. LLMService 인스턴스 생성
    * 5. rawChunks 빈 배열 생성
+   * 6. DocumentExtractor 인스턴스 생성 (PDF/DOCX 통합)
    * 
    * @constructor
-   * 
-   * # NOTE: LLM 연결은 initialize() 호출 시 확인
    */
   constructor() {
     this.guidelines = [];           // 최종 추출된 가이드라인 배열
-    this.extractedText = '';         // PDF에서 추출한 전체 텍스트
+    this.extractedText = '';         // 문서에서 추출한 전체 텍스트
     this.seenSections = new Map();   // 중복 섹션 방지용 맵
     this.llmService = new LLMService();
     this.rawChunks = [];             // LLM 처리 전 기본 추출 결과
+    this.documentExtractor = new DocumentExtractor(); // PDF/DOCX 통합 추출기
   }
 
   /**
@@ -113,106 +105,98 @@ export class GuidelineExtractor {
   }
 
   /**
-   * PDF 파일에서 텍스트 추출 및 가이드라인 파싱 시작
+   * 문서 파일에서 텍스트 추출 및 가이드라인 파싱 시작
+   * 
+   * PDF, DOCX 파일 모두 지원
+   * DOC 파일은 에러 메시지와 함께 변환 안내 제공
    * 
    * 내부 흐름:
-   * 1. fs.access() → PDF 파일 존재 확인
-   * 2. PDFParser.loadPDF() → PDF 파일 로드
-   * 3. 'pdfParser_dataReady' 이벤트 대기
-   * 4. pdfData.Pages 순회하며 각 페이지의 Texts 추출
-   * 5. decodeURIComponent() → URI 인코딩된 텍스트 디코딩
-   * 6. parseTextContent() 호출 → 텍스트 분석 및 가이드라인 추출
-   * 7. guidelines 배열 반환
+   * 1. fs.access() → 문서 파일 존재 확인
+   * 2. documentExtractor.isSupported() → 파일 형식 확인
+   * 3. documentExtractor.extractText() → 텍스트 추출 (형식별 자동 처리)
+   * 4. parseTextContent() 호출 → 텍스트 분석 및 가이드라인 추출
+   * 5. guidelines 배열 반환
    * 
    * 에러 처리:
    * - 파일 없음: fs.access() 에러
-   * - PDF 파싱 실패: 'pdfParser_dataError' 이벤트
-   * - 텍스트 없음: fullText.length === 0 체크
+   * - 지원하지 않는 형식: Error with 지원 형식 안내
+   * - DOC 파일: Error with 변환 안내 메시지
+   * - 텍스트 없음: extractedText.length === 0 체크
    * 
    * @async
-   * @param {string} pdfPath - PDF 파일 경로 (절대 또는 상대 경로)
+   * @param {string} filePath - 문서 파일 경로 (PDF 또는 DOCX)
    * @returns {Promise<Array>} 추출된 가이드라인 배열
-   * @throws {Error} PDF 파일 접근 실패
-   * @throws {Error} PDF 파싱 실패
+   * @throws {Error} 문서 파일 접근 실패
+   * @throws {Error} 지원하지 않는 파일 형식
    * @throws {Error} 텍스트 추출 불가
    * 
    * @example
    * const extractor = new GuidelineExtractor();
    * await extractor.initialize();
-   * const guidelines = await extractor.extractFromPDF('./coding_standards.pdf');
-   * logger.info(`추출된 규칙: ${guidelines.length}개`);
    * 
-   * # TODO: Python 변환 - pdfplumber.open() 사용
-   * # TODO: 에러 핸들링 강화 (재시도 로직, 상세 에러 메시지)
-   * # NOTE: PDF 보안 제한 시 에러 발생 가능 (암호화, DRM)
-   * # PERFORMANCE: 대용량 PDF는 페이지별 스트리밍 처리 권장
+   * // PDF 파일
+   * const guidelines1 = await extractor.extractFromDocument('./guide.pdf');
+   * 
+   * // DOCX 파일
+   * const guidelines2 = await extractor.extractFromDocument('./guide.docx');
+   * 
+   * logger.info(`추출된 규칙: ${guidelines1.length}개`);
+   */
+  async extractFromDocument(filePath) {
+    try {
+      logger.info(`📄 문서 파일 확인 중: ${filePath}`);
+      await fs.access(filePath);
+      logger.info('✅ 문서 파일 존재 확인됨');
+
+      // 파일 형식 확인
+      if (!this.documentExtractor.isSupported(filePath)) {
+        const ext = path.extname(filePath).toLowerCase();
+        
+        // DOC 파일인 경우 변환 안내
+        if (ext === '.doc') {
+          const help = this.documentExtractor.getDocConversionHelp(filePath);
+          throw new Error(help);
+        }
+        
+        const supportedFormats = this.documentExtractor.getSupportedFormats();
+        throw new Error(
+          `지원하지 않는 파일 형식입니다.\n` +
+          `지원 형식: ${supportedFormats.join(', ')}`
+        );
+      }
+
+      // 통합 텍스트 추출 (PDF/DOCX 자동 감지)
+      logger.info('📖 문서 파싱 중...');
+      this.extractedText = await this.documentExtractor.extractText(filePath);
+
+      logger.info(`✅ 텍스트 추출 완료 - 총 ${this.extractedText.length}자`);
+
+      if (this.extractedText.length === 0) {
+        throw new Error('문서에서 텍스트를 추출할 수 없습니다.');
+      }
+
+      // 기존 텍스트 분석 로직 호출
+      await this.parseTextContent(this.extractedText);
+      
+      logger.info(`총 ${this.guidelines.length}개 가이드라인 추출 완료`);
+      return this.guidelines;
+
+    } catch (error) {
+      logger.error('문서 처리 오류:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 하위 호환성: extractFromPDF() 유지
+   * 
+   * @deprecated extractFromDocument() 사용 권장
+   * @param {string} pdfPath - PDF 파일 경로
+   * @returns {Promise<Array>} 추출된 가이드라인 배열
    */
   async extractFromPDF(pdfPath) {
-    return new Promise(async (resolve, reject) => {
-      try {
-        logger.info(`PDF 파일 확인 중: ${pdfPath}`);
-        await fs.access(pdfPath);
-        logger.info('PDF 파일 존재 확인됨');
-
-        const pdfParser = new PDFParser();
-
-        pdfParser.on('pdfParser_dataError', errData => {
-          logger.error('PDF 파싱 오류:', errData.parserError);
-          reject(new Error('PDF 파싱 실패'));
-        });
-
-        pdfParser.on('pdfParser_dataReady', async pdfData => {
-          try {
-            logger.info('PDF 파싱 완료');
-
-            let fullText = '';
-
-            // 각 페이지의 텍스트 블록을 순회하며 전체 텍스트 구성
-            if (pdfData.Pages) {
-              logger.info(`페이지 수: ${pdfData.Pages.length}`);
-
-              for (let pageIndex = 0; pageIndex < pdfData.Pages.length; pageIndex++) {
-                const page = pdfData.Pages[pageIndex];
-                logger.info(`페이지 ${pageIndex + 1}/${pdfData.Pages.length} 처리 중...`);
-
-                if (page.Texts) {
-                  // 각 텍스트 블록의 URI 인코딩된 텍스트를 디코딩하여 연결
-                  for (const text of page.Texts) {
-                    if (text.R && text.R[0] && text.R[0].T) {
-                      const decodedText = decodeURIComponent(text.R[0].T);
-                      fullText += decodedText + ' ';
-                    }
-                  }
-                  fullText += '\n';
-                }
-              }
-            }
-
-            logger.info(`텍스트 추출 완료 - 총 ${fullText.length}자`);
-            this.extractedText = fullText;
-
-            if (fullText.length === 0) {
-              reject(new Error('PDF에서 텍스트를 추출할 수 없습니다.'));
-              return;
-            }
-
-            await this.parseTextContent(fullText);
-            logger.info(`총 ${this.guidelines.length}개 가이드라인 추출 완료`);
-            resolve(this.guidelines);
-
-          } catch (error) {
-            reject(error);
-          }
-        });
-
-        logger.info('PDF 파일 로딩 중...');
-        pdfParser.loadPDF(pdfPath);
-
-      } catch (error) {
-        logger.error('PDF 처리 오류:', error.message);
-        reject(error);
-      }
-    });
+    logger.warn('⚠️ extractFromPDF()는 deprecated입니다. extractFromDocument() 사용을 권장합니다.');
+    return await this.extractFromDocument(pdfPath);
   }
 
   /**
@@ -240,90 +224,187 @@ export class GuidelineExtractor {
    * - 각 섹션은 다음 섹션 번호 또는 EOF까지
    * 
    * @async
-   * @param {string} text - PDF에서 추출한 전체 텍스트
+   * @param {string} text - 문서에서 추출한 전체 텍스트
    * @returns {Promise<void>} guidelines 배열에 결과 저장
-   * 
-   * # TODO: Python 변환 - 정규식 re 모듈 사용
-   * # PERFORMANCE: 섹션 파싱을 멀티프로세싱으로 병렬화
-   * # NOTE: 목차 제거 실패 시 전체 텍스트 파싱 (노이즈 증가)
    */
-  async parseTextContent(text) {
-    logger.info('텍스트 분석 시작...\n');
+  /**
+ * 추출된 텍스트 분석 및 섹션 파싱
+ * DOCX와 PDF 모두 호환되도록 개선
+ */
+/**
+ * 추출된 텍스트 분석 및 섹션 파싱
+ * DOCX의 목차 형식 문제 해결 ("명명 규칙 2" → "2.1 서비스 ID")
+ */
+async parseTextContent(text) {
+  logger.info('텍스트 분석 시작...\n');
 
-    // 공백 정규화: 여러 공백을 하나로 통일
-    let normalizedText = text
-      .split('\n')
-      .map(line => line.replace(/\s+/g, ' ').trim())
-      .join('\n');
+  // 공백 정규화: 여러 공백을 하나로 통일
+  let normalizedText = text
+    .split('\n')
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .join('\n');
 
-    let workingText = normalizedText;
-    const lines = normalizedText.split('\n');
-    let contentStartLine = -1;
+  let workingText = normalizedText;
+  const lines = normalizedText.split('\n');
+  let contentStartLine = -1;
 
-    // 목차를 건너뛰고 본문 시작점 찾기
-    // "2. 명명 규칙" 다음에 "2.1. 서비스"가 오는 패턴으로 본문 시작 판단
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      if (line.match(/^2\.\s*명명\s*규칙/) &&
-        i + 1 < lines.length &&
-        lines[i + 1].match(/^2\.1\.\s*서비스/)) {
+  // ============================================
+  // DOCX 목차 완전 제거 로직
+  // ============================================
+  
+  logger.info('📋 목차 제거 시작...\n');
+  
+  // 방법 1: "제/개정 이력" 또는 "목 차" 이후 첫 번째 "2.1"로 시작하는 본문 찾기
+  let foundMarker = false;
+  let markerType = '';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // 마커 감지 (제/개정 이력, 목차, Ver 1.0 등)
+    if (!foundMarker) {
+      if (line.match(/제\s*\/\s*개정\s*이력/)) {
+        foundMarker = true;
+        markerType = '제/개정 이력';
+        logger.info(`  ✔ "${markerType}" 발견 (${i}번째 줄)`);
+        continue;
+      }
+      if (line.match(/목\s+차|목차/)) {
+        foundMarker = true;
+        markerType = '목차';
+        logger.info(`  ✔ "${markerType}" 발견 (${i}번째 줄)`);
+        continue;
+      }
+      if (line.match(/Ver\s*\d+\.\d+/)) {
+        foundMarker = true;
+        markerType = 'Ver';
+        logger.info(`  ✔ "${markerType}" 발견 (${i}번째 줄)`);
+        continue;
+      }
+    }
+    
+    // 마커 이후 본문 찾기
+    if (foundMarker) {
+      // 목차 패턴 감지 및 건너뛰기
+      // "명명 규칙       2" 같은 패턴
+      if (line.match(/^[가-힣\s\(]+\s+\d{1,2}$/)) {
+        logger.info(`  ⏭️  목차 항목 건너뜀: "${line.substring(0, 50)}"`);
+        continue;
+      }
+      
+      // "개요    1" 같은 패턴
+      if (line.match(/^[가-힣]{2,10}\s+\d{1,2}$/)) {
+        logger.info(`  ⏭️  목차 항목 건너뜀: "${line}"`);
+        continue;
+      }
+      
+      // 본문 섹션 패턴: "2.1", "2.1.", "2.1 서비스" 등
+      if (line.match(/^2\.1[\.\s]/)) {
         contentStartLine = i;
-        logger.info(`✔ 본문 시작: ${i}번째 라인 - "${line}"`);
+        logger.info(`  ✅ 본문 시작 발견 (${i}번째 줄): "${line.substring(0, 50)}"`);
         break;
       }
     }
-
-    // 목차 제거: 본문 시작점 이후부터만 사용
-    if (contentStartLine > 0) {
-      workingText = lines.slice(contentStartLine).join('\n');
-      logger.info(`✔ 목차 제거 완료 (${contentStartLine}줄 제거)`);
-    } else {
-      // 대체 방법: "설계 단계" 문자열로 본문 찾기
-      const fallbackStart = normalizedText.indexOf('설계 단계 명명규칙 및 코딩표준 2');
-      if (fallbackStart > 0) {
-        workingText = normalizedText.substring(fallbackStart);
-        logger.info('✔ "설계 단계" 마커로 본문 확인');
+  }
+  
+  // 방법 2 (Fallback): 첫 번째 "2.1"로 시작하는 줄 (단, 목차 형식 제외)
+  if (contentStartLine < 0) {
+    logger.warn('  ⚠️ 마커 방법 실패, 직접 검색 시작...');
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // "2.1 서비스" 같은 본문 패턴
+      if (line.match(/^2\.1\s+[가-힣a-zA-Z]/)) {
+        // 목차 형식 제외 ("서비스 ID       2" 같은 것)
+        if (!line.match(/\s+\d{1,2}$/)) {
+          contentStartLine = i;
+          logger.info(`  ✅ 본문 시작 발견 (직접 검색, ${i}번째 줄): "${line.substring(0, 50)}"`);
+          break;
+        }
       }
-    }
-
-    logger.info(`작업 텍스트: ${workingText.split('\n').length}줄, ${workingText.length}자`);
-    logger.info(`샘플:\n${workingText.substring(0, 200)}...\n`);
-
-    // 번호 기반 섹션 파싱 (2.1, 3.2.1 형식)
-    const sections = this.parseSections(workingText);
-    logger.info(`\n${sections.length}개 섹션 발견\n`);
-
-    if (sections.length === 0) {
-      logger.info('⚠️ 경고: 섹션을 찾지 못했습니다.');
-      const sampleLines = workingText.split('\n').slice(0, 10);
-      logger.info('처음 10줄:');
-      sampleLines.forEach((line, idx) => logger.info(`${idx}: ${line.substring(0, 80)}`));
-    }
-
-    // 각 섹션에서 기본 가이드라인 추출
-    for (const section of sections) {
-      const basicGuideline = this.extractGuidelineFromSection(section);
-
-      if (basicGuideline && this.isValidGuideline(basicGuideline)) {
-        this.rawChunks.push({
-          sectionNumber: section.number,
-          title: section.title,
-          content: section.content,
-          basicGuideline: basicGuideline
-        });
-      }
-    }
-
-    // LLM을 사용한 심화 분석 (연결된 경우)
-    if (this.llmService && this.rawChunks.length > 0) {
-      logger.info(`\n🧠 LLM 심화 분석 시작 (${this.rawChunks.length}개 청크)`);
-      await this.enhanceGuidelinesWithLLM();
-    } else {
-      logger.info('\n⚠️ LLM 미사용 - 기본 추출 결과만 저장');
-      this.guidelines = this.rawChunks.map(chunk => chunk.basicGuideline);
     }
   }
+  
+  // 방법 3 (Last Resort): "명명 규칙" 이후 모든 텍스트
+  if (contentStartLine < 0) {
+    logger.warn('  ⚠️ 본문 시작점을 찾을 수 없습니다.');
+    
+    const namingStart = normalizedText.indexOf('명명 규칙');
+    if (namingStart > 0) {
+      workingText = normalizedText.substring(namingStart + '명명 규칙'.length);
+      logger.info('  ⚠️ "명명 규칙" 이후 텍스트 사용 (fallback)');
+    } else {
+      logger.error('  ❌ 본문을 전혀 찾을 수 없습니다. 전체 텍스트 사용');
+    }
+  }
+
+  // 목차 제거: 본문 시작점 이후부터만 사용
+  if (contentStartLine > 0) {
+    workingText = lines.slice(contentStartLine).join('\n');
+    logger.info(`\n✅ 목차 제거 완료 (${contentStartLine}줄 제거)`);
+    logger.info(`   본문 시작: "${lines[contentStartLine].substring(0, 60)}..."`);
+  }
+
+  logger.info(`\n작업 텍스트: ${workingText.split('\n').length}줄, ${workingText.length}자`);
+  logger.info(`샘플:\n${workingText.substring(0, 300)}...\n`);
+
+  // 번호 기반 섹션 파싱 (2.1, 3.2.1 형식)
+  const sections = this.parseSections(workingText);
+  logger.info(`\n${sections.length}개 섹션 발견\n`);
+
+  if (sections.length === 0) {
+    logger.error('❌ 섹션을 찾지 못했습니다!');
+    logger.error('   DOCX 파일 구조를 확인하세요.');
+    
+    const sampleLines = workingText.split('\n').slice(0, 50);
+    logger.info('\n📋 처음 50줄:');
+    sampleLines.forEach((line, idx) => {
+      if (line.trim().length > 0) {
+        logger.info(`${idx}: ${line.substring(0, 100)}`);
+      }
+    });
+    
+    // 디버깅: 숫자로 시작하는 줄 찾기
+    const numberedLines = workingText.split('\n')
+      .filter(line => line.match(/^\d+\./))
+      .slice(0, 30);
+    
+    if (numberedLines.length > 0) {
+      logger.info('\n🔢 숫자로 시작하는 줄들:');
+      numberedLines.forEach(line => {
+        logger.info(`  ${line.substring(0, 80)}`);
+      });
+    }
+    
+    logger.error('\n⚠️ 추출 실패. extracted_text_debug.txt 파일을 확인하세요.');
+  }
+
+  // 각 섹션에서 기본 가이드라인 추출
+  for (const section of sections) {
+    const basicGuideline = this.extractGuidelineFromSection(section);
+
+    if (basicGuideline && this.isValidGuideline(basicGuideline)) {
+      this.rawChunks.push({
+        sectionNumber: section.number,
+        title: section.title,
+        content: section.content,
+        basicGuideline: basicGuideline
+      });
+    }
+  }
+
+  logger.info(`\n✅ 유효한 가이드라인 ${this.rawChunks.length}개 발견`);
+
+  // LLM을 사용한 심화 분석 (연결된 경우)
+  if (this.llmService && this.rawChunks.length > 0) {
+    logger.info(`\n🧠 LLM 심화 분석 시작 (${this.rawChunks.length}개 청크)`);
+    await this.enhanceGuidelinesWithLLM();
+  } else {
+    logger.info('\n⚠️ LLM 미사용 - 기본 추출 결과만 저장');
+    this.guidelines = this.rawChunks.map(chunk => chunk.basicGuideline);
+  }
+}
 
   /**
    * LLM을 사용하여 기본 가이드라인을 향상
@@ -538,95 +619,150 @@ ${castOperatorGuidance}
    * - 번호 패턴(2.1, 3.2.1 등)을 기준으로 섹션 구분
    * - 각 섹션의 제목과 내용 추출
    */
-  parseSections(text) {
-    const sections = [];
+  /**
+ * 텍스트를 섹션으로 분리
+ * - 번호 패턴(2.1, 3.2.1 등)을 기준으로 섹션 구분
+ * - 각 섹션의 제목과 내용 추출
+ * - DOCX와 PDF 모두 호환
+ */
+/**
+ * 텍스트를 섹션으로 분리
+ * - 번호 패턴(2.1, 3.2.1 등)을 기준으로 섹션 구분
+ * - 날짜, 이상 패턴 제외
+ * - DOCX와 PDF 모두 호환
+ */
+parseSections(text) {
+  const sections = [];
 
-    // 섹션 번호 앞에 개행 삽입하여 분리 용이하게 만듦
-    let processedLines = text
-      .replace(/(\d+\.\d+(?:\.\d+)?\.?\s+[가-힣a-zA-Z])/g, '\n$1')
-      .split('\n')
-      .filter(line => line.trim().length > 0);
+  // DOCX 호환성 개선: 공백 정규화 먼저 수행
+  text = text.replace(/\s+/g, ' ').trim();
+  
+  // 섹션 번호 앞에 개행 삽입하여 분리 용이하게 만듦
+  let processedLines = text
+    .replace(/(\d+\.\d+(?:\.\d+)?\.?\s+[가-힣a-zA-Z]+)/g, '\n$1')
+    .split('\n')
+    .filter(line => line.trim().length > 0);
 
-    logger.info(`전처리 후 ${processedLines.length}개 라인\n`);
+  logger.info(`전처리 후 ${processedLines.length}개 라인\n`);
 
-    for (let i = 0; i < processedLines.length; i++) {
-      const line = processedLines[i].trim();
+  for (let i = 0; i < processedLines.length; i++) {
+    const line = processedLines[i].trim();
 
-      // 목차 구분선 제외
-      if (line.includes('....')) continue;
+    // 목차 구분선 제외
+    if (line.includes('....')) continue;
 
-      // 섹션 헤더 패턴 매칭 (예: "2.1 서비스 명명")
-      const headerMatch = line.match(/^(\d+\.\d+(?:\.\d+)?\.?)\s+(.+)/);
+    // 섹션 헤더 패턴 매칭 (예: "2.1 서비스 명명")
+    const headerMatch = line.match(/^(\d+\.\d+(?:\.\d+)?\.?)\s+([^\n]{2,100})/);
 
-      if (!headerMatch) continue;
+    if (!headerMatch) continue;
 
-      const sectionNumber = headerMatch[1].replace(/\.$/, '');
-      let remainingText = headerMatch[2];
+    const sectionNumber = headerMatch[1].replace(/\.$/, '');
+    let remainingText = headerMatch[2];
 
-      // 완전한 제목 추출 (다음 줄까지 포함될 수 있음)
-      let sectionTitle = this.extractFullTitle(remainingText, processedLines, i);
-
-      // 제목 정리: 공백 정규화, 불완전한 괄호 제거
-      sectionTitle = sectionTitle
-        .replace(/\s+/g, ' ')
-        .replace(/\s*\([^)]*$/, '')
-        .replace(/\s*[\(\[].*?[\)\]].*?[\(\[].*$/, '')
-        .trim();
-
-      // 짧은 제목의 경우 다음 줄과 결합 (예: "서비스 input parameter")
-      if (sectionTitle.match(/^(서비스|input|output)\s*$/i)) {
-        if (i + 1 < processedLines.length) {
-          const nextLine = processedLines[i + 1].trim();
-          if (!nextLine.match(/^\d+\.\d+/) && nextLine.length < 50) {
-            sectionTitle += ' ' + nextLine.split(/\s{2,}/)[0];
-          }
-        }
-      }
-
-      // "The" 시작 제목의 경우 완전한 문장 찾기
-      if (sectionTitle === 'The' || sectionTitle.startsWith('The ')) {
-        for (let j = i + 1; j < Math.min(i + 3, processedLines.length); j++) {
-          const nextLine = processedLines[j].trim();
-          if (nextLine.match(/^\d+\.\d+/)) break;
-          if (nextLine.match(/^(for|while|do|if|switch|statement)/i)) {
-            sectionTitle = 'The ' + nextLine.split(/\s+/).slice(0, 3).join(' ');
-            break;
-          }
-        }
-      }
-
-      sectionTitle = sectionTitle.substring(0, 100).trim();
-
-      // 유효하지 않은 제목 필터링
-      if (sectionTitle.length < 2) continue;
-      if (sectionTitle.includes('....')) continue;
-
-      // 섹션 내용 수집 (다음 섹션 헤더까지)
-      let content = line + '\n';
-      for (let j = i + 1; j < processedLines.length; j++) {
-        const nextLine = processedLines[j].trim();
-        if (nextLine.match(/^\d+\.\d+(?:\.\d+)?\.?\s+[가-힣a-zA-Z]/)) {
-          break;
-        }
-        content += nextLine + '\n';
-      }
-
-      // 너무 짧은 섹션 제외
-      if (content.length < 50) continue;
-
-      sections.push({
-        number: sectionNumber,
-        title: sectionTitle,
-        content: content,
-        fullTitle: `${sectionNumber} ${sectionTitle}`
-      });
-
-      logger.info(`✔ ${sectionNumber} ${sectionTitle} (${content.length}자)`);
+    // ============================================
+    // 섹션 번호 검증 (날짜/이상 패턴 제외)
+    // ============================================
+    
+    // 1. 날짜 패턴 제외 (20120712, 20241201 등)
+    if (sectionNumber.match(/20\d{6}$/)) {
+      logger.warn(`  ⏭️  날짜 패턴 제외: ${sectionNumber}`);
+      continue;
+    }
+    
+    // 2. 8자리 숫자 패턴 제외 (파일명의 날짜 부분)
+    if (sectionNumber.match(/\d{8}$/)) {
+      logger.warn(`  ⏭️  8자리 숫자 패턴 제외: ${sectionNumber}`);
+      continue;
+    }
+    
+    // 3. 앞에 0이 여러 개 있는 이상한 패턴 제외
+    if (sectionNumber.match(/^0{3,}\d/)) {
+      logger.warn(`  ⏭️  이상한 0 패턴 제외: ${sectionNumber}`);
+      continue;
+    }
+    
+    // 4. 너무 긴 섹션 번호 제외 (정상: 2.1, 3.2.1, 3.3.1.2 / 비정상: 000101.02)
+    if (sectionNumber.replace(/\./g, '').length > 6) {
+      logger.warn(`  ⏭️  너무 긴 섹션 번호 제외: ${sectionNumber}`);
+      continue;
+    }
+    
+    // 5. 유효한 섹션 번호 패턴만 허용 (2.x, 3.x, ...)
+    if (!sectionNumber.match(/^[2-9]\.\d+/)) {
+      logger.warn(`  ⏭️  유효하지 않은 섹션 번호: ${sectionNumber}`);
+      continue;
     }
 
-    logger.info(`\n총 ${sections.length}개 섹션 파싱 완료`);
-    return sections;
+    // 완전한 제목 추출 (다음 줄까지 포함될 수 있음)
+    let sectionTitle = this.extractFullTitle(remainingText, processedLines, i);
+
+    // 제목 정리: 공백 정규화, 불완전한 괄호 제거
+    sectionTitle = sectionTitle
+      .replace(/\s+/g, ' ')
+      .replace(/\s*\([^)]*$/, '')
+      .replace(/\s*[\(\[].*?[\)\]].*?[\(\[].*$/, '')
+      .trim();
+
+    // 짧은 제목의 경우 다음 줄과 결합
+    if (sectionTitle.match(/^(서비스|input|output)\s*$/i)) {
+      if (i + 1 < processedLines.length) {
+        const nextLine = processedLines[i + 1].trim();
+        if (!nextLine.match(/^\d+\.\d+/) && nextLine.length < 50) {
+          sectionTitle += ' ' + nextLine.split(/\s{2,}/)[0];
+        }
+      }
+    }
+
+    // "The" 시작 제목의 경우 완전한 문장 찾기
+    if (sectionTitle === 'The' || sectionTitle.startsWith('The ')) {
+      for (let j = i + 1; j < Math.min(i + 3, processedLines.length); j++) {
+        const nextLine = processedLines[j].trim();
+        if (nextLine.match(/^\d+\.\d+/)) break;
+        if (nextLine.match(/^(for|while|do|if|switch|statement)/i)) {
+          sectionTitle = 'The ' + nextLine.split(/\s+/).slice(0, 3).join(' ');
+          break;
+        }
+      }
+    }
+
+    sectionTitle = sectionTitle.substring(0, 100).trim();
+
+    // 유효하지 않은 제목 필터링
+    if (sectionTitle.length < 2) continue;
+    if (sectionTitle.includes('....')) continue;
+    
+    // 저작권 정보나 메타데이터 제외
+    if (sectionTitle.match(/copyright|PROJ|MY Core Banking System/i)) {
+      logger.warn(`  ⏭️  메타데이터 제외: ${sectionTitle.substring(0, 50)}`);
+      continue;
+    }
+
+    // 섹션 내용 수집 (다음 섹션 헤더까지)
+    let content = line + '\n';
+    for (let j = i + 1; j < processedLines.length; j++) {
+      const nextLine = processedLines[j].trim();
+      if (nextLine.match(/^\d+\.\d+(?:\.\d+)?\.?\s+[가-힣a-zA-Z]/)) {
+        break;
+      }
+      content += nextLine + '\n';
+    }
+
+    // 너무 짧은 섹션 제외
+    if (content.length < 50) continue;
+
+    sections.push({
+      number: sectionNumber,
+      title: sectionTitle,
+      content: content,
+      fullTitle: `${sectionNumber} ${sectionTitle}`
+    });
+
+    logger.info(`  ✔ ${sectionNumber} ${sectionTitle} (${content.length}자)`);
   }
+
+  logger.info(`\n총 ${sections.length}개 섹션 파싱 완료`);
+  return sections;
+}
 
   /**
    * 여러 줄에 걸친 제목 추출
@@ -1088,19 +1224,23 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args.length < 2) {
-    logger.info('\n사용법: node guideline-extractor-llm.js <input.pdf> <output.json>');
+    logger.info('\n사용법: node guideline-extractor-llm.js <input.pdf|input.docx> <output.json>');
+    logger.info('\n지원 형식:');
+    logger.info('  - PDF: .pdf');
+    logger.info('  - DOCX: .docx');
+    logger.info('  - DOC: .doc → DOCX 변환 필요');
     return;
   }
 
-  const [inputPdf, outputJson] = args;
+  const [inputFile, outputJson] = args;
 
-  logger.info(`입력 파일: ${inputPdf}`);
+  logger.info(`입력 파일: ${inputFile}`);
   logger.info(`출력 파일: ${outputJson}\n`);
 
   try {
     const extractor = new GuidelineExtractor();
     await extractor.initialize();
-    await extractor.extractFromPDF(inputPdf);
+    await extractor.extractFromDocument(inputFile);
 
     // 추출 결과 품질 확인
     if (extractor.guidelines.length < 10) {
