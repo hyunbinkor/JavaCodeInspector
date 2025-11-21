@@ -80,59 +80,6 @@ export class JavaASTParser {
     };
   }
 
-  extractASTPatterns(ast, originalCode) {
-    // AST를 순회하며 코드 패턴 정보를 추출하는 visitor 생성
-    const visitor = new ASTPatternVisitor(
-      this.frameworkClasses,
-      this.resourceTypes,
-      this.securitySensitiveApis
-    );
-    
-    // AST 트리를 깊이 우선 탐색으로 순회
-    this.traverseAST(ast, visitor);
-    
-    return {
-      // 전체 노드 구조 통계
-      nodeTypes: visitor.nodeTypes,
-      nodeCount: visitor.nodeCount,
-      maxDepth: visitor.maxDepth,
-      cyclomaticComplexity: visitor.cyclomaticComplexity,
-      
-      // 클래스, 메서드, 변수 선언 정보
-      classDeclarations: visitor.classDeclarations,
-      methodDeclarations: visitor.methodDeclarations,
-      variableDeclarations: visitor.variableDeclarations,
-      
-      // 메서드 호출 및 생성자 호출 패턴
-      methodInvocations: visitor.methodInvocations,
-      constructorCalls: visitor.constructorCalls,
-      
-      // if, for, while 등 제어문 사용 현황
-      controlStructures: visitor.controlStructures,
-      exceptionHandling: visitor.exceptionHandling,
-      
-      // 어노테이션 및 상속 관계
-      annotations: visitor.annotations,
-      inheritancePatterns: visitor.inheritancePatterns,
-      
-      // 리소스 생성/해제 추적
-      resourceLifecycles: visitor.resourceLifecycles,
-      resourceLeakRisks: visitor.resourceLeakRisks,
-      
-      // SQL 인젝션 등 보안 위험 패턴
-      securityPatterns: visitor.securityPatterns,
-      sqlInjectionRisks: visitor.sqlInjectionRisks,
-      
-      // N+1 쿼리 등 성능 문제 패턴
-      performanceIssues: visitor.performanceIssues,
-      loopAnalysis: visitor.loopAnalysis,
-      
-      // 코드 냄새 및 디자인 패턴
-      codeSmells: visitor.codeSmells,
-      designPatterns: visitor.designPatterns
-    };
-  }
-
   traverseAST(node, visitor, depth = 0) {
     if (!node || typeof node !== 'object') {
       return;

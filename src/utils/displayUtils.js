@@ -99,16 +99,3 @@ export function displayUnifiedResults(results, fileName) {
     logger.info(`⚠️ 경고: ${results.styleAndGuideline.warnings.length}개 (스타일/포맷)`);
   }
 }
-
-/**
- * 심각도에 따른 이모지 아이콘 반환
- */
-export function getSeverityIcon(severity) {
-  const icons = {
-    'CRITICAL': '🔴',
-    'HIGH': '🟠',
-    'MEDIUM': '🟡',
-    'LOW': '🔵'
-  };
-  return icons[severity] || '⚪';
-}

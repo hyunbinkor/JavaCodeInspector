@@ -267,23 +267,7 @@ export class LLMAbstractionLayer {
       throw error;
     }
   }
-
-  /**
-   * Provider 정보 반환
-   * 
-   * @returns {Object} Provider 메타데이터
-   */
-  getProviderInfo() {
-    return {
-      environment: this.environment,
-      provider: this.provider,
-      model: this.model,
-      baseURL: this.baseURL,
-      timeout: this.timeout,
-      maxRetries: this.maxRetries
-    };
-  }
-
+  
   /**
    * 비동기 sleep 유틸리티
    * 

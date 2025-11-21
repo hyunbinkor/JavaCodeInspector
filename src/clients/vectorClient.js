@@ -479,19 +479,6 @@ export class VectorClient {
   }
 
   /**
-   * Provider 정보 반환
-   * 
-   * @returns {Object} Provider 정보
-   */
-  getProviderInfo() {
-    return {
-      provider: this.provider,
-      codePatternName: this.codePatternName,
-      guidelineName: this.guidelineName
-    };
-  }
-
-  /**
    * 하위 호환성을 위한 별칭 메서드들
    * (기존 코드와의 호환성 유지)
    */
@@ -513,17 +500,5 @@ export class VectorClient {
     } catch (error) {
       return {};
     }
-  }
-
-  // getClassObjectCount 메서드 (하위 호환성)
-  async getClassObjectCount(className) {
-    // getSystemStats를 사용하여 구현
-    const stats = await this.getSystemStats();
-    if (className === this.codePatternName) {
-      return stats.codePatterns;
-    } else if (className === this.guidelineName) {
-      return stats.guidelines;
-    }
-    return 0;
   }
 }

@@ -390,26 +390,6 @@ export class LLMService {
     };
   }
 
-  sanitizeCode(code) {
-    if (!code || typeof code !== 'string') return '// No code available';
-    return code.trim().slice(0, 1000);
-  }
-
-  generateBasicRegexPatterns(code) {
-    const patterns = [];
-    if (code && typeof code === 'string') {
-      const classMatch = code.match(/class\s+(\w+)/);
-      if (classMatch) {
-        patterns.push(`class\\s+${classMatch[1]}`);
-      }
-      const methodMatches = code.match(/\w+\s+(\w+)\s*\([^)]*\)/g);
-      if (methodMatches && methodMatches.length > 0) {
-        patterns.push('\\w+\\s+\\w+\\s*\\([^)]*\\)');
-      }
-    }
-    return patterns.length > 0 ? patterns : ['.*'];
-  }
-
   analyzeCodeIssues(code, type) {
     const issues = [];
     if (!code || typeof code !== 'string') {
@@ -446,20 +426,5 @@ export class LLMService {
     }
 
     return issues.length > 0 ? issues : [`${type} 분석 결과 없음`];
-  }
-
-  generateFailureScenarios(issueData) {
-    const scenarios = [];
-    if (issueData.category === 'resource_management') {
-      scenarios.push('메모리 누수로 인한 OutOfMemoryError');
-      scenarios.push('파일 핸들 고갈로 인한 시스템 장애');
-    } else if (issueData.category === 'security_vulnerability') {
-      scenarios.push('보안 취약점을 통한 데이터 유출');
-      scenarios.push('권한 우회로 인한 시스템 침해');
-    } else {
-      scenarios.push('예상치 못한 런타임 오류');
-      scenarios.push('성능 저하로 인한 서비스 응답 지연');
-    }
-    return scenarios;
   }
 }
