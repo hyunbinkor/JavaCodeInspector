@@ -176,13 +176,6 @@ export const config = {
   }
 };
 
-// 설정 초기화 및 검증
-const validation = validateConfig();
-if (!validation.isValid) {
-  logger.error('❌ Config 검증 실패:');
-  validation.errors.forEach(error => logger.error(`  - ${error}`));
-  process.exit(1);
-}
 
 // 성공 메시지 출력
 logger.info('='.repeat(60));

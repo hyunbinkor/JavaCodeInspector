@@ -26,15 +26,10 @@ import { Command } from 'commander';
 import { pathToFileURL } from 'url';
 
 // Commands
-import { performUnifiedCheck } from './commands/checkCommand.js';
-import { performGuidelineOnlyCheck } from './commands/checkGuidelinesCommand.js';
-import { searchAndAnalyzePatterns } from './commands/searchCommand.js';
-import { processSingleIssue } from './commands/analyzeCommand.js';
-import { processBatchIssues } from './commands/batchCommand.js';
-import { manageGuidelines } from './commands/guidelinesCommand.js';
-import { extractGuidelinesFromPDF } from './commands/extractCommand.js';
-import { importGuidelinesToVectorDB } from './commands/importCommand.js';
-import { checkSystemStatus } from './commands/statusCommand.js';
+import { processSingleIssue, processBatchIssues } from './commands/issueCommand.js';
+import { checkSystemStatus, searchAndAnalyzePatterns } from './commands/utilCommand.js';
+import { performUnifiedCheck, performGuidelineOnlyCheck } from './commands/checkCommand.js';
+import { extractGuidelinesFromGuide, importGuidelinesToVectorDB, manageGuidelines } from './commands/guidelineCommand.js';
 import logger from './utils/loggerUtils.js';
 
 const program = new Command();
@@ -288,7 +283,7 @@ program
   .option('--import-to-db', '추출 후 바로 VectorDB에 import')
   .action(async (options) => {
     try {
-      await extractGuidelinesFromPDF(options);
+      await extractGuidelinesFromGuide(options);
     } catch (error) {
       logger.error('가이드라인 추출 실패:', error.message);
       process.exit(1);
