@@ -154,7 +154,16 @@ export class LLMAbstractionLayer {
       // vLLM OpenAI 호환 API 형식
       return {
         model: this.model,
-        prompt: prompt,
+        messages: [
+          {
+            role: "system",
+            content: "You are expert in Financial Core System Software Developer."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
         temperature: temperature,
         max_tokens: maxTokens,
         top_p: options.top_p || 0.95,
@@ -212,7 +221,7 @@ export class LLMAbstractionLayer {
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
     
     try {
-      const response = await fetch(`${this.baseURL}/v1/completions`, {
+      const response = await fetch(`${this.baseURL}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -230,7 +239,7 @@ export class LLMAbstractionLayer {
       
       // vLLM (OpenAI 호환) 응답 형식: { choices: [{ text: "..." }] }
       if (data.choices && data.choices.length > 0) {
-        return data.choices[0].text || '';
+        return data.choices[0].message.content || '';
       }
       
       throw new Error('vLLM 응답에 텍스트가 없습니다');
@@ -252,7 +261,7 @@ export class LLMAbstractionLayer {
       const testPrompt = "Hello";
       const response = await this.generateCompletion(testPrompt, {
         temperature: 0.1,
-        max_tokens: 10
+        max_tokens: 100
       });
       
       if (response && response.length > 0) {
