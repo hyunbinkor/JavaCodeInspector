@@ -23,6 +23,57 @@ export const config = {
   // 현재 환경
   environment: ENVIRONMENT,
   
+  // ===== 🆕 Enhanced Embedding 설정 (신규) =====
+  embedding: {
+    // Enhanced 모드 활성화 (LLM 기반 의미론적 임베딩 + 카테고리별 가중치)
+    enableEnhancedEmbedding: process.env.ENABLE_ENHANCED_EMBEDDING === 'true',
+    
+    // LLM 기반 의미론적 임베딩 활성화 (gpt-oss:120b 사용)
+    // false: 정규식 기반 (기존 방식)
+    // true: LLM 기반 (고품질, 느림)
+    enableLLMEmbedding: process.env.ENABLE_LLM_EMBEDDING === 'true',
+    
+    // 메타 정보 기반 비즈니스 컨텍스트 임베딩 활성화
+    // false: 기본 비즈니스 임베딩 32차원
+    // true: 메타 정보 포함 64차원
+    enableMetaInfo: process.env.ENABLE_META_INFO === 'true',
+    
+    // 임베딩 차원 설정
+    dimensions: {
+      syntactic: 128,    // 구문적 임베딩 (AST 구조)
+      semantic: 256,     // 의미론적 임베딩 (코드 의미)
+      framework: 64,     // 프레임워크 임베딩 (Spring/JPA)
+      context: process.env.ENABLE_ENHANCED_EMBEDDING === 'true' ? 64 : 32  // 비즈니스 컨텍스트
+    },
+    
+    // 가중치 설정 파일 경로
+    weightsPath: process.env.EMBEDDING_WEIGHTS_PATH || './config/embedding-weights.json',
+    
+    // Threshold 설정 파일 경로
+    thresholdsPath: process.env.EMBEDDING_THRESHOLDS_PATH || './config/category-thresholds.json',
+    
+    // 개발가이드 문서 경로 (LLM 컨텍스트용)
+    guidelineDocPath: process.env.GUIDELINE_DOC_PATH || './asset/development_guide.json',
+    
+    // 메타 정보 파일 경로
+    metaInfoPath: process.env.META_INFO_PATH || './asset/meta_info.json',
+    
+    // 캐싱 설정
+    cacheEnabled: process.env.EMBEDDING_CACHE_ENABLED !== 'false',  // 기본 true
+    cacheTTL: parseInt(process.env.EMBEDDING_CACHE_TTL) || 3600,  // 1시간
+    
+    // LLM 호출 설정
+    llmTimeout: parseInt(process.env.EMBEDDING_LLM_TIMEOUT) || 30000,  // 30초
+    llmBatchSize: parseInt(process.env.EMBEDDING_BATCH_SIZE) || 5,
+    llmModel: process.env.EMBEDDING_LLM_MODEL || 'gpt-oss:120b',
+    
+    // 품질 관리
+    minQualityScore: parseInt(process.env.EMBEDDING_MIN_QUALITY_SCORE) || 50,  // 0-100
+    
+    // 폴백 설정
+    enableFallback: process.env.EMBEDDING_ENABLE_FALLBACK !== 'false',  // LLM 실패 시 정규식으로
+  },
+  
   // Vector DB 통합 설정
   vector: {
     provider: process.env.VECTOR_PROVIDER || 'qdrant', // 'weaviate' 또는 'qdrant'
@@ -41,7 +92,7 @@ export const config = {
       url: process.env.QDRANT_URL || 'http://localhost:6333',
       apiKey: process.env.QDRANT_API_KEY,
       collectionNamePattern: process.env.QDRANT_COLLECTION_NAME_PATTERN || 'code_{type}',
-      vectorDimensions: parseInt(process.env.QDRANT_VECTOR_DIMENSIONS) || 480,
+      vectorDimensions: process.env.ENABLE_ENHANCED_EMBEDDING === 'true' ? 512 : 480,  // Enhanced: 512, 기본: 480
       indexParams: {
         m: parseInt(process.env.QDRANT_INDEX_M) || 16,
         ef_construct: parseInt(process.env.QDRANT_INDEX_EF_CONSTRUCT) || 100
@@ -59,108 +110,63 @@ export const config = {
   // LLM 통합 설정 (환경별 자동 전환)
   llm: {
     // Provider 자동 선택 (external: ollama, internal: vllm)
-    provider: ENVIRONMENT === 'internal' ? 'vllm' : 
-              (process.env.LLM_PROVIDER || 'ollama'),
-    
-    // Bedrock 설정 (사용 시)
-    bedrock: {
-      region: process.env.BEDROCK_REGION || 'us-east-1',
-      modelId: process.env.BEDROCK_MODEL_ID || 'arn:aws:bedrock:us-east-1:484907498824:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0',
-      maxTokens: parseInt(process.env.BEDROCK_MAX_TOKENS) || 4000,
-      temperature: parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.1,
-      isDeepSeekR1: false
-    },
+    provider: ENVIRONMENT === 'internal' ? 'vllm' : process.env.LLM_PROVIDER || 'ollama',
     
     // Ollama 설정 (외부망)
     ollama: {
-      baseUrl: process.env.OLLAMA_BASE_URL || 'http://115.41.241.155:3333',
-      model: process.env.OLLAMA_MODEL || 'qwen3-coder:30b',
-      maxTokens: parseInt(process.env.OLLAMA_MAX_TOKENS) || 4000,
-      temperature: parseFloat(process.env.OLLAMA_TEMPERATURE) || 0.1,
+      baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+      model: process.env.OLLAMA_MODEL || 'qwen2.5-coder:32b',
       timeout: parseInt(process.env.OLLAMA_TIMEOUT) || 180000,
-      
-      // 안정성 설정
       maxRequestSize: parseInt(process.env.OLLAMA_MAX_REQUEST_SIZE) || 8000,
-      chunkSize: parseInt(process.env.OLLAMA_CHUNK_SIZE) || 2000,
-      defaultTimeout: parseInt(process.env.OLLAMA_DEFAULT_TIMEOUT) || 90000,
-      backoffMultiplier: parseInt(process.env.OLLAMA_BACKOFF_MULTIPLIER) || 2000,
-      
-      // ECONNRESET 대응
-      connectionRetryDelay: parseInt(process.env.OLLAMA_CONNECTION_RETRY_DELAY) || 2000,
-      maxConnectionRetries: parseInt(process.env.OLLAMA_MAX_CONNECTION_RETRIES) || 5,
-      enableKeepAlive: process.env.OLLAMA_ENABLE_KEEPALIVE !== 'false',
-      keepAliveTimeout: parseInt(process.env.OLLAMA_KEEPALIVE_TIMEOUT) || 30000
+      chunkSize: parseInt(process.env.OLLAMA_CHUNK_SIZE) || 7000
     },
     
     // vLLM 설정 (내부망)
     vllm: {
       baseUrl: process.env.VLLM_BASE_URL || 'http://localhost:8000',
-      model: process.env.VLLM_MODEL || 'Qwen/Qwen2.5-Coder-30B-Instruct',
-      maxTokens: parseInt(process.env.VLLM_MAX_TOKENS || '4000', 10),
-      temperature: parseFloat(process.env.VLLM_TEMPERATURE || '0.1'),
-      timeout: parseInt(process.env.VLLM_TIMEOUT || '180000', 10)
+      model: process.env.VLLM_MODEL || 'qwen2.5-coder-32b-instruct',
+      timeout: parseInt(process.env.VLLM_TIMEOUT) || 180000,
+      maxRequestSize: parseInt(process.env.VLLM_MAX_REQUEST_SIZE) || 8000
     },
 
+    // AWS Bedrock 설정 (선택적)
+    bedrock: {
+      region: process.env.AWS_REGION || 'us-east-1',
+      modelId: process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      maxTokens: parseInt(process.env.BEDROCK_MAX_TOKENS) || 4096,
+      temperature: parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.1
+    },
+    
     // 공통 설정
-    maxRetries: parseInt(process.env.LLM_MAX_RETRIES) || 3,
-    maxContinuationAttempts: parseInt(process.env.LLM_MAX_CONTINUATION_ATTEMPTS) || 5,
-    
-    // 대용량 요청 처리
-    enableChunking: process.env.LLM_ENABLE_CHUNKING !== 'false',
-    chunkOverlapSize: parseInt(process.env.LLM_CHUNK_OVERLAP_SIZE) || 100,
-    maxChunksPerRequest: parseInt(process.env.LLM_MAX_CHUNKS_PER_REQUEST) || 5
+    maxRetries: parseInt(process.env.LLM_MAX_RETRIES) || 2,
+    retryDelay: parseInt(process.env.LLM_RETRY_DELAY) || 2000,
+    temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.1,
+    enableChunking: process.env.LLM_ENABLE_CHUNKING === 'true',
+    batchSize: parseInt(process.env.LLM_BATCH_SIZE) || 3
   },
-  
-  // ============================================
-  // 문서 추출 설정 (신규 추가)
-  // ============================================
+
+  // 문서 추출 설정
   document: {
-    // 지원 형식 (PDF, DOCX만 - DOC는 제외)
-    supportedFormats: (process.env.DOCUMENT_SUPPORTED_FORMATS || 'pdf,docx')
-      .split(',')
-      .map(f => f.trim().toLowerCase()),
-    
-    // 기본 형식
-    defaultFormat: (process.env.DOCUMENT_DEFAULT_FORMAT || 'pdf').toLowerCase(),
-    
-    // DOCX 옵션
-    docx: {
-      // 순수 텍스트 추출 (mammoth.extractRawText)
-      extractRawText: process.env.DOCX_EXTRACT_RAW_TEXT !== 'false',
-      // 헤더/푸터 포함
-      includeHeaders: process.env.DOCX_INCLUDE_HEADERS !== 'false',
-      // 각주 포함
-      includeFootnotes: process.env.DOCX_INCLUDE_FOOTNOTES !== 'false'
-    },
-    
-    // PDF 옵션
+    supportedFormats: ['pdf', 'docx'],
+    defaultFormat: 'docx',
     pdf: {
-      parser: process.env.PDF_PARSER || 'pdf2json'
+      parser: 'pdf-parse'
     },
-    
-    // 텍스트 정규화
-    normalize: {
-      whitespace: process.env.DOCUMENT_NORMALIZE_WHITESPACE !== 'false',
-      removePageNumbers: process.env.DOCUMENT_REMOVE_PAGE_NUMBERS === 'true',
-      minTextLength: parseInt(process.env.DOCUMENT_MIN_TEXT_LENGTH) || 100
+    docx: {
+      extractPureText: true
     }
   },
-  
+
+  // 애플리케이션 설정
   app: {
-    logLevel: process.env.LOG_LEVEL || 'info',
-    batchSize: parseInt(process.env.BATCH_SIZE) || 10,
-    
-    // 성능 최적화
-    enableParallelProcessing: process.env.ENABLE_PARALLEL_PROCESSING !== 'false',
-    maxParallelTasks: parseInt(process.env.MAX_PARALLEL_TASKS) || 3,
-    
-    // 오류 복구
-    enableGracefulDegradation: process.env.ENABLE_GRACEFUL_DEGRADATION !== 'false',
-    fallbackToSimpleAnalysis: process.env.FALLBACK_TO_SIMPLE_ANALYSIS !== 'false'
+    batchSize: parseInt(process.env.APP_BATCH_SIZE) || 10,
+    maxParallelTasks: parseInt(process.env.APP_MAX_PARALLEL_TASKS) || 5,
+    enableParallelProcessing: process.env.APP_ENABLE_PARALLEL === 'true',
+    enableGracefulDegradation: process.env.APP_ENABLE_GRACEFUL_DEGRADATION !== 'false'
   },
 
   /**
-   * 현재 활성화된 LLM 설정 반환
+   * 활성화된 LLM 설정 반환
    * 
    * @returns {Object} 활성 LLM 설정
    */
@@ -234,7 +240,25 @@ if (config.vector.provider === 'weaviate') {
 logger.info(`  🔄 최대 재시도: ${config.vector.maxRetries}회`);
 logger.info(`  📏 유사도 임계값: ${config.vector.similarityThreshold}`);
 
-// 문서 설정 출력 (신규)
+// ===== 🆕 Enhanced Embedding 설정 출력 =====
+if (config.embedding.enableEnhancedEmbedding) {
+  logger.info(`\n✨ Enhanced Embedding 설정:`);
+  logger.info(`  🎯 모드: Enhanced (LLM 기반)`);
+  logger.info(`  🤖 LLM 임베딩: ${config.embedding.enableLLMEmbedding ? '활성화' : '비활성화'}`);
+  logger.info(`  🏢 메타 정보: ${config.embedding.enableMetaInfo ? '활성화' : '비활성화'}`);
+  logger.info(`  📊 총 차원: ${config.embedding.dimensions.syntactic + config.embedding.dimensions.semantic + config.embedding.dimensions.framework + config.embedding.dimensions.context}차원`);
+  logger.info(`     - 구문적: ${config.embedding.dimensions.syntactic}차원`);
+  logger.info(`     - 의미론적: ${config.embedding.dimensions.semantic}차원`);
+  logger.info(`     - 프레임워크: ${config.embedding.dimensions.framework}차원`);
+  logger.info(`     - 컨텍스트: ${config.embedding.dimensions.context}차원`);
+  logger.info(`  ⚙️  가중치: ${config.embedding.weightsPath}`);
+  logger.info(`  🎚️  Threshold: ${config.embedding.thresholdsPath}`);
+  logger.info(`  📖 가이드라인: ${config.embedding.guidelineDocPath}`);
+  logger.info(`  💾 캐싱: ${config.embedding.cacheEnabled ? '활성화' : '비활성화'}`);
+  logger.info(`  📊 최소 품질: ${config.embedding.minQualityScore}/100`);
+}
+
+// 문서 설정 출력
 logger.info(`\n📄 문서 추출 설정:`);
 logger.info(`  📑 지원 형식: ${config.document.supportedFormats.join(', ').toUpperCase()}`);
 logger.info(`  📌 기본 형식: ${config.document.defaultFormat.toUpperCase()}`);

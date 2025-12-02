@@ -59,6 +59,26 @@ import { LLMService } from '../clients/llmService.js';
 import { DynamicSafePatternAnalyzer } from './dynamicSafePatternAnalyzer.js';
 import { config } from '../config.js';
 import logger from '../utils/loggerUtils.js';
+import fs from 'fs/promises';
+import path from 'path';
+
+let CATEGORY_THRESHOLDS = null;
+
+async function loadCategoryThresholds() {
+  if (CATEGORY_THRESHOLDS) return CATEGORY_THRESHOLDS;
+  
+  try {
+    const thresholdsPath = path.join(process.cwd(), 'config', 'category-thresholds.json');
+    const content = await fs.readFile(thresholdsPath, 'utf-8');
+    CATEGORY_THRESHOLDS = JSON.parse(content);
+    logger.info('✅ 카테고리별 threshold 로드 완료');
+    return CATEGORY_THRESHOLDS;
+  } catch (error) {
+    logger.warn('⚠️ threshold 파일 없음, 기본값 사용');
+    return null;
+  }
+}
+
 /**
  * VectorDB 동적 패턴 기반 코드 분석기 클래스
  * 
@@ -167,11 +187,28 @@ export class issueCodeAnalyzer {
   async analyzeCodeIssues(sourceCode, similarPatterns) {
     logger.info('🔍 코드 내 문제 위치 분석 시작...');
 
+    const thresholds = await loadCategoryThresholds();
+
     const detectedIssues = [];
     const codeLines = sourceCode.split('\n');
 
     // AST 파싱으로 코드의 구조적 정보 추출
     const astResult = this.astParser.parseJavaCode(sourceCode);
+
+    // ===== 🆕 추가: 카테고리별 threshold 필터링 =====
+    if (thresholds && similarPatterns.length > 0) {
+      similarPatterns = similarPatterns.filter(pattern => {
+        const category = pattern.category || 'resource_management';
+        const categoryThreshold = thresholds[category];
+        
+        if (!categoryThreshold) return pattern.similarity >= 0.7;
+        
+        // overall threshold 적용
+        return pattern.similarity >= (categoryThreshold.overall || 0.7);
+      });
+      
+      logger.info(`  🎯 Threshold 필터 후: ${similarPatterns.length}개 패턴`);
+    }
 
     // similarPatterns가 이미 제공되었는지 확인
     if (!similarPatterns || similarPatterns.length === 0) {

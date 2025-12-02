@@ -501,4 +501,289 @@ export class VectorClient {
       return {};
     }
   }
+
+  /**
+ * ===== 신규 메서드: 컴포넌트별 유사도 계산과 함께 검색 =====
+ * 
+ * Enhanced 임베딩 모드에서 사용
+ * 전체 유사도뿐만 아니라 각 컴포넌트별 유사도도 함께 반환
+ * 
+ * @param {Array<number>} queryVector - 쿼리 벡터 (512차원)
+ * @param {number} limit - 최대 결과 수
+ * @param {number} threshold - 유사도 임계값 (기본값: 0.7)
+ * @returns {Promise<Array<Object>>} 검색 결과 (component_scores 포함)
+ */
+  async searchWithComponentScores(queryVector, limit = 10, threshold = 0.7) {
+    logger.info('🔍 컴포넌트별 유사도 검색 시작...');
+    
+    // 벡터 차원 확인
+    const expectedDim = config.embedding?.dimensions?.total || 480;
+    if (queryVector.length !== expectedDim) {
+      logger.warn(`⚠️ 벡터 차원 불일치: ${queryVector.length} (예상: ${expectedDim})`);
+    }
+    
+    // 기본 검색 (더 많은 후보 가져오기)
+    const candidates = await this.adapter.searchSimilarPatterns(
+      queryVector, 
+      limit * 3,  // 후보를 많이 가져와서 필터링
+      threshold * 0.8  // 낮은 threshold로 먼저 가져오기
+    );
+    
+    logger.info(`  📊 후보 패턴: ${candidates.length}개`);
+    
+    // 각 후보에 대해 컴포넌트별 유사도 계산
+    const resultsWithScores = [];
+    
+    for (const candidate of candidates) {
+      try {
+        // 저장된 패턴의 임베딩 벡터 가져오기
+        const patternVector = this.extractEmbeddingVector(candidate);
+        
+        if (!patternVector || patternVector.length !== queryVector.length) {
+          logger.warn(`  ⚠️ 패턴 ${candidate.id} 벡터 누락 또는 불일치`);
+          continue;
+        }
+        
+        // 컴포넌트별 유사도 계산
+        const componentScores = this.calculateComponentSimilarities(
+          queryVector, 
+          patternVector
+        );
+        
+        // 결과에 추가
+        resultsWithScores.push({
+          ...candidate,
+          component_scores: componentScores,
+          overall_score: candidate.score
+        });
+      } catch (error) {
+        logger.warn(`  ⚠️ 패턴 ${candidate.id} 처리 실패:`, error.message);
+      }
+    }
+    
+    logger.info(`  ✅ 컴포넌트 점수 계산 완료: ${resultsWithScores.length}개`);
+    
+    // threshold 이상만 필터링
+    const filtered = resultsWithScores.filter(r => r.overall_score >= threshold);
+    
+    // overall_score 기준 정렬
+    filtered.sort((a, b) => b.overall_score - a.overall_score);
+    
+    // limit 개수만 반환
+    return filtered.slice(0, limit);
+  }
+
+  /**
+   * ===== 신규 메서드: 임베딩 벡터 추출 =====
+   * 
+   * @param {Object} pattern - VectorDB에서 가져온 패턴 객체
+   * @returns {Array<number>|null} 임베딩 벡터
+   */
+  extractEmbeddingVector(pattern) {
+    // Qdrant 형식
+    if (pattern.vector) {
+      return pattern.vector;
+    }
+    
+    // Weaviate 형식
+    if (pattern._additional?.vector) {
+      return pattern._additional.vector;
+    }
+    
+    // embeddings 필드에 있는 경우
+    if (pattern.embeddings?.combined_embedding) {
+      return pattern.embeddings.combined_embedding;
+    }
+    
+    logger.warn('  ⚠️ 임베딩 벡터를 찾을 수 없음');
+    return null;
+  }
+
+  /**
+   * ===== 신규 메서드: 컴포넌트별 유사도 계산 =====
+   * 
+   * @param {Array<number>} queryVector - 쿼리 벡터
+   * @param {Array<number>} patternVector - 패턴 벡터
+   * @returns {Object} 컴포넌트별 유사도 { syntactic, semantic, framework, context }
+   */
+  calculateComponentSimilarities(queryVector, patternVector) {
+    const dimensions = config.embedding?.dimensions || {
+      syntactic: 128,
+      semantic: 256,
+      framework: 64,
+      context: 32
+    };
+    
+    let offset = 0;
+    const scores = {};
+    
+    // Syntactic
+    if (dimensions.syntactic > 0) {
+      const qSyn = queryVector.slice(offset, offset + dimensions.syntactic);
+      const pSyn = patternVector.slice(offset, offset + dimensions.syntactic);
+      scores.syntactic = this.cosineSimilarity(qSyn, pSyn);
+      offset += dimensions.syntactic;
+    }
+    
+    // Semantic
+    if (dimensions.semantic > 0) {
+      const qSem = queryVector.slice(offset, offset + dimensions.semantic);
+      const pSem = patternVector.slice(offset, offset + dimensions.semantic);
+      scores.semantic = this.cosineSimilarity(qSem, pSem);
+      offset += dimensions.semantic;
+    }
+    
+    // Framework
+    if (dimensions.framework > 0) {
+      const qFra = queryVector.slice(offset, offset + dimensions.framework);
+      const pFra = patternVector.slice(offset, offset + dimensions.framework);
+      scores.framework = this.cosineSimilarity(qFra, pFra);
+      offset += dimensions.framework;
+    }
+    
+    // Context (Enhanced 모드일 때만)
+    if (dimensions.context && dimensions.context > 0) {
+      const qCtx = queryVector.slice(offset, offset + dimensions.context);
+      const pCtx = patternVector.slice(offset, offset + dimensions.context);
+      scores.context = this.cosineSimilarity(qCtx, pCtx);
+    }
+    
+    return scores;
+  }
+
+  /**
+   * ===== 신규 메서드: 코사인 유사도 계산 =====
+   * 
+   * @param {Array<number>} vecA - 벡터 A
+   * @param {Array<number>} vecB - 벡터 B
+   * @returns {number} 코사인 유사도 (0~1)
+   */
+  cosineSimilarity(vecA, vecB) {
+    if (!vecA || !vecB || vecA.length !== vecB.length) {
+      return 0;
+    }
+    
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    
+    for (let i = 0; i < vecA.length; i++) {
+      dotProduct += vecA[i] * vecB[i];
+      normA += vecA[i] * vecA[i];
+      normB += vecB[i] * vecB[i];
+    }
+    
+    normA = Math.sqrt(normA);
+    normB = Math.sqrt(normB);
+    
+    if (normA === 0 || normB === 0) {
+      return 0;
+    }
+    
+    return dotProduct / (normA * normB);
+  }
+
+  /**
+   * ===== 신규 메서드: 카테고리별 threshold를 적용한 검색 =====
+   * 
+   * @param {Array<number>} queryVector - 쿼리 벡터
+   * @param {string} category - 카테고리
+   * @param {number} limit - 최대 결과 수
+   * @param {Object} categoryThresholds - 카테고리별 threshold 설정
+   * @returns {Promise<Array<Object>>} 필터링된 검색 결과
+   */
+  async searchWithCategoryThreshold(queryVector, category, limit, categoryThresholds) {
+    logger.info(`🔍 카테고리별 threshold 검색: ${category}`);
+    
+    // 카테고리별 threshold 가져오기
+    const thresholds = categoryThresholds[category] || categoryThresholds['_default'] || {
+      syntactic: 0.65,
+      semantic: 0.70,
+      framework: 0.65,
+      overall: 0.70
+    };
+    
+    logger.info(`  📊 Threshold:`, thresholds);
+    
+    // 컴포넌트 점수와 함께 검색 (후보를 많이 가져오기)
+    const candidates = await this.searchWithComponentScores(
+      queryVector,
+      limit * 3,
+      thresholds.overall * 0.8  // 낮은 overall threshold로 먼저 가져오기
+    );
+    
+    // 카테고리별 threshold 적용하여 필터링
+    const filtered = candidates.filter(result => {
+      const cs = result.component_scores;
+      
+      return result.overall_score >= thresholds.overall &&
+              (cs.syntactic === undefined || cs.syntactic >= thresholds.syntactic) &&
+              (cs.semantic === undefined || cs.semantic >= thresholds.semantic) &&
+              (cs.framework === undefined || cs.framework >= thresholds.framework);
+    });
+    
+    logger.info(`  ✅ 필터링 결과: ${filtered.length}/${candidates.length}개`);
+    
+    if (filtered.length > 0) {
+      logger.info(`     최고 점수: overall=${filtered[0].overall_score.toFixed(3)}, ` +
+                  `semantic=${filtered[0].component_scores.semantic?.toFixed(3) || 'N/A'}`);
+    }
+    
+    // limit 개수만 반환
+    return filtered.slice(0, limit);
+  }
+
+  /**
+   * ===== 신규 메서드: 검색 결과 통계 =====
+   * 
+   * @param {Array<Object>} results - 검색 결과 (component_scores 포함)
+   * @returns {Object} 통계 정보
+   */
+  getSearchStatistics(results) {
+    if (results.length === 0) {
+      return {
+        count: 0,
+        overall_avg: 0,
+        component_avg: {}
+      };
+    }
+    
+    const stats = {
+      count: results.length,
+      overall_avg: 0,
+      overall_min: 1,
+      overall_max: 0,
+      component_avg: {},
+      component_min: {},
+      component_max: {}
+    };
+    
+    // Overall 점수 통계
+    for (const result of results) {
+      const score = result.overall_score || result.score || 0;
+      stats.overall_avg += score;
+      stats.overall_min = Math.min(stats.overall_min, score);
+      stats.overall_max = Math.max(stats.overall_max, score);
+      
+      // Component 점수 통계
+      if (result.component_scores) {
+        for (const [component, score] of Object.entries(result.component_scores)) {
+          if (score === undefined) continue;
+          
+          stats.component_avg[component] = (stats.component_avg[component] || 0) + score;
+          stats.component_min[component] = Math.min(stats.component_min[component] || 1, score);
+          stats.component_max[component] = Math.max(stats.component_max[component] || 0, score);
+        }
+      }
+    }
+    
+    // 평균 계산
+    stats.overall_avg /= results.length;
+    
+    for (const component in stats.component_avg) {
+      stats.component_avg[component] /= results.length;
+    }
+      
+    return stats;
+  }
 }
