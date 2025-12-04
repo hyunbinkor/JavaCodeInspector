@@ -56,9 +56,9 @@ export async function processSingleIssue(options) {
 export async function processBatchIssues(options) {
 
   logger.info('배치 처리 시작');
-  logger.info(`입력 디렉토리: ${process.env.SAMPLE_CODE_DIRECTORY}`);
+  logger.info(`입력 디렉토리: ${process.env.ISSUE_RAW_DIRECTORY}`);
 
-  const issueFiles = await getJsonFiles(process.env.SAMPLE_CODE_DIRECTORY);
+  const issueFiles = await getJsonFiles(process.env.ISSUE_RAW_DIRECTORY);
   logger.info(`발견된 이슈 파일: ${issueFiles.length}개`);
 
   if (issueFiles.length === 0) {
@@ -80,7 +80,7 @@ export async function processBatchIssues(options) {
     try {
       logger.info(`\n처리 중 (${i + 1}/${issueFiles.length}): ${fileName}`);
 
-      const issueData = await loadData(filePath, 'issueRaw');
+      const issueData = await loadData(fileName, 'issueRaw');
       const patternDataset = await generator.generatePatternDataset(issueData);
 
       results.push(patternDataset);

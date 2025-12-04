@@ -191,7 +191,7 @@ export class QdrantAdapter {
         tags: JSON.stringify(dataset.metadata?.tags || []),
         antiPatternCode: (dataset.anti_pattern?.code_template || '').substring(0, 5000),
         recommendedPatternCode: (dataset.recommended_pattern?.code_template || '').substring(0, 5000),
-        semanticSignature: (dataset.anti_pattern?.pattern_signature?.semantic_signature || '').substring(0, 500),
+        semanticSignature: String(dataset.anti_pattern?.pattern_signature?.semantic_signature || '').substring(0, 500),
         frameworkVersion: dataset.framework_context?.framework_version || 'unknown',
         occurrenceFrequency: Number(dataset.impact_analysis?.historical_data?.occurrence_frequency ?? 1),
         qualityScore: Number(dataset.validation_info?.quality_score ?? 0),
