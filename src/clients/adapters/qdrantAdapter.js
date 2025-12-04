@@ -2,6 +2,7 @@ import { QdrantClient } from '@qdrant/js-client-rest';
 import { config } from '../../config.js';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../../utils/loggerUtils.js'
+import { hostname } from 'os';
 
 /**
  * Qdrant Vector DB Adapter
@@ -20,7 +21,12 @@ export class QdrantAdapter {
     const qdrantConfig = config.vector.qdrant;
     const url = qdrantConfig.url;
     
-    const clientOptions = { url };
+    // const clientOptions = { url };
+    const clientOptions = { 
+      host: qdrantConfig.host,
+      https: qdrantConfig.https,
+      port: qdrantConfig.port
+    };
     
     // API 키가 있으면 추가
     if (qdrantConfig.apiKey) {
@@ -628,4 +634,281 @@ export class QdrantAdapter {
     // 벡터가 없을 경우 더미 벡터 생성 (모든 값이 0)
     return new Array(this.vectorDimensions).fill(0);
   }
+
+  // ============================================================
+// 1. 컬렉션 내 모든 패턴 삭제
+// ============================================================
+
+/**
+ * CodePattern 컬렉션의 모든 데이터 삭제
+ * 
+ * @async
+ * @returns {Promise<{deleted: number}>} 삭제된 포인트 수
+ */
+async clearAllPatterns() {
+  try {
+    const collectionInfo = await this.client.getCollection(this.codePatternCollectionName);
+    const pointsCount = collectionInfo.points_count || 0;
+    
+    if (pointsCount === 0) {
+      logger.info('📭 삭제할 패턴이 없습니다.');
+      return { deleted: 0 };
+    }
+    
+    logger.info(`🗑️  ${pointsCount}개 패턴 삭제 시작...`);
+    
+    // 모든 포인트 삭제 (빈 필터 = 전체 선택)
+    await this.client.delete(this.codePatternCollectionName, {
+      filter: {
+        must: []
+      }
+    });
+    
+    logger.info(`✅ ${pointsCount}개 패턴 삭제 완료`);
+    return { deleted: pointsCount };
+    
+  } catch (error) {
+    logger.error('❌ 패턴 전체 삭제 오류:', error.message);
+    throw error;
+  }
+}
+
+// ============================================================
+// 2. 특정 issueRecordId 목록으로 패턴 존재 여부 확인
+// ============================================================
+
+/**
+ * 특정 issueRecordId들이 이미 저장되어 있는지 확인
+ * 
+ * @async
+ * @param {string[]} issueRecordIds - 확인할 issueRecordId 배열
+ * @returns {Promise<{exists: boolean, existingIds: string[], count: number}>}
+ */
+async checkPatternsExist(issueRecordIds) {
+  try {
+    if (!issueRecordIds || issueRecordIds.length === 0) {
+      return { exists: false, existingIds: [], count: 0 };
+    }
+    
+    const existingIds = [];
+    
+    for (const issueRecordId of issueRecordIds) {
+      const searchResult = await this.client.scroll(this.codePatternCollectionName, {
+        filter: {
+          must: [{ key: 'issueRecordId', match: { value: issueRecordId } }]
+        },
+        limit: 1,
+        with_payload: false
+      });
+      
+      if (searchResult.points.length > 0) {
+        existingIds.push(issueRecordId);
+      }
+    }
+    
+    return {
+      exists: existingIds.length > 0,
+      existingIds,
+      count: existingIds.length
+    };
+    
+  } catch (error) {
+    logger.error('❌ 패턴 존재 확인 오류:', error.message);
+    throw error;
+  }
+}
+
+// ============================================================
+// 3. 배치 패턴 저장 (기존 데이터 확인/삭제 옵션 포함)
+// ============================================================
+
+/**
+ * 여러 패턴을 배치로 저장
+ * 
+ * @async
+ * @param {Object[]} datasets - 저장할 패턴 데이터셋 배열
+ * @param {Object} options - 저장 옵션
+ * @param {boolean} options.clearExisting - true면 저장 전 기존 데이터 모두 삭제
+ * @param {boolean} options.skipExisting - true면 이미 존재하는 패턴은 건너뛰기
+ * @param {number} options.batchSize - 한 번에 저장할 배치 크기 (기본: 10)
+ * @returns {Promise<{success: number, failed: number, skipped: number, errors: Array}>}
+ */
+async batchStorePatterns(datasets, options = {}) {
+  const {
+    clearExisting = false,
+    skipExisting = false,
+    batchSize = 10
+  } = options;
+  
+  const result = {
+    success: 0,
+    failed: 0,
+    skipped: 0,
+    errors: []
+  };
+  
+  try {
+    logger.info(`\n${'='.repeat(60)}`);
+    logger.info(`📦 배치 패턴 저장 시작: ${datasets.length}개`);
+    logger.info(`   옵션: clearExisting=${clearExisting}, skipExisting=${skipExisting}`);
+    logger.info(`${'='.repeat(60)}`);
+    
+    // 1. 기존 데이터 삭제 옵션 처리
+    if (clearExisting) {
+      logger.info('\n🗑️  기존 패턴 전체 삭제 중...');
+      const clearResult = await this.clearAllPatterns();
+      logger.info(`   삭제 완료: ${clearResult.deleted}개`);
+    }
+    
+    // 2. 기존 데이터 건너뛰기 옵션 처리
+    let datasetsToStore = datasets;
+    if (skipExisting && !clearExisting) {
+      const issueRecordIds = datasets.map(d => d.issue_record_id);
+      const existCheck = await this.checkPatternsExist(issueRecordIds);
+      
+      if (existCheck.exists) {
+        logger.info(`\n⚠️  이미 존재하는 패턴 발견: ${existCheck.count}개`);
+        logger.info(`   건너뛸 ID: ${existCheck.existingIds.join(', ')}`);
+        
+        datasetsToStore = datasets.filter(
+          d => !existCheck.existingIds.includes(d.issue_record_id)
+        );
+        result.skipped = existCheck.count;
+      }
+    }
+    
+    if (datasetsToStore.length === 0) {
+      logger.info('\n📭 저장할 새 패턴이 없습니다.');
+      return result;
+    }
+    
+    // 3. 배치 단위로 저장
+    logger.info(`\n💾 ${datasetsToStore.length}개 패턴 저장 시작...`);
+    
+    for (let i = 0; i < datasetsToStore.length; i += batchSize) {
+      const batch = datasetsToStore.slice(i, i + batchSize);
+      const batchNum = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(datasetsToStore.length / batchSize);
+      
+      logger.info(`\n📦 배치 ${batchNum}/${totalBatches} 처리 중... (${batch.length}개)`);
+      
+      const points = [];
+      for (const dataset of batch) {
+        try {
+          const point = await this.preparePatternPoint(dataset);
+          if (point) {
+            points.push(point);
+          }
+        } catch (error) {
+          result.failed++;
+          result.errors.push({
+            issueRecordId: dataset.issue_record_id,
+            error: error.message
+          });
+          logger.error(`   ❌ ${dataset.issue_record_id}: ${error.message}`);
+        }
+      }
+      
+      if (points.length > 0) {
+        try {
+          await this.client.upsert(this.codePatternCollectionName, {
+            wait: true,
+            points
+          });
+          result.success += points.length;
+          logger.info(`   ✅ ${points.length}개 저장 완료`);
+        } catch (error) {
+          result.failed += points.length;
+          result.errors.push({
+            batch: batchNum,
+            error: error.message
+          });
+          logger.error(`   ❌ 배치 저장 실패: ${error.message}`);
+        }
+      }
+    }
+    
+    // 4. 결과 요약
+    logger.info(`\n${'='.repeat(60)}`);
+    logger.info(`📊 배치 저장 결과:`);
+    logger.info(`   ✅ 성공: ${result.success}개`);
+    logger.info(`   ⏭️  건너뜀: ${result.skipped}개`);
+    logger.info(`   ❌ 실패: ${result.failed}개`);
+    logger.info(`${'='.repeat(60)}\n`);
+    
+    return result;
+    
+  } catch (error) {
+    logger.error('❌ 배치 저장 오류:', error.message);
+    throw error;
+  }
+}
+
+// ============================================================
+// 4. 패턴 포인트 준비 헬퍼 메서드
+// ============================================================
+
+/**
+ * 단일 패턴 데이터셋을 Qdrant 포인트로 변환
+ * @private
+ */
+async preparePatternPoint(dataset) {
+  const id = uuidv4();
+  
+  let vector = dataset.embeddings?.combined_embedding;
+  
+  if (!vector || !Array.isArray(vector)) {
+    logger.warn(`⚠️ 벡터가 없어 더미 벡터 생성: ${dataset.issue_record_id}`);
+    vector = this.createDummyVector();
+  }
+  
+  if (vector.length !== this.vectorDimensions) {
+    logger.warn(`⚠️ 벡터 차원 불일치, 더미 벡터로 대체: ${dataset.issue_record_id}`);
+    vector = this.createDummyVector();
+  }
+  
+  if (!this.validateVector(vector)) {
+    throw new Error('Vector contains NaN, Infinity, or non-numeric values');
+  }
+  
+  const payload = {
+    issueRecordId: dataset.issue_record_id,
+    patternData: JSON.stringify(dataset),
+    title: (dataset.metadata?.title || '').substring(0, 500),
+    category: dataset.metadata?.category || 'general',
+    severity: dataset.metadata?.severity || 'MEDIUM',
+    tags: JSON.stringify(dataset.metadata?.tags || []),
+    antiPatternCode: (dataset.anti_pattern?.code_template || '').substring(0, 5000),
+    recommendedPatternCode: (dataset.recommended_pattern?.code_template || '').substring(0, 5000),
+    semanticSignature: (dataset.anti_pattern?.pattern_signature?.semantic_signature || '').substring(0, 500),
+    frameworkVersion: dataset.framework_context?.framework_version || 'unknown',
+    occurrenceFrequency: Number(dataset.validation_info?.historical_data?.occurrence_frequency ?? 1),
+    qualityScore: Number(dataset.validation_info?.quality_score ?? 0),
+    astSignature: (dataset.embeddings?.ast_analysis?.signature || '').substring(0, 5000),
+    astNodeTypes: JSON.stringify(dataset.embeddings?.ast_analysis?.nodeTypes || []),
+    cyclomaticComplexity: Number(dataset.embeddings?.ast_analysis?.cyclomaticComplexity ?? 1),
+    maxDepth: Number(dataset.embeddings?.ast_analysis?.maxDepth ?? 1)
+  };
+  
+  return { id, vector, payload };
+}
+
+// ============================================================
+// 5. 패턴 개수 조회
+// ============================================================
+
+/**
+ * CodePattern 컬렉션의 현재 포인트 수 조회
+ * @async
+ * @returns {Promise<number>}
+ */
+async getPatternCount() {
+  try {
+    const collectionInfo = await this.client.getCollection(this.codePatternCollectionName);
+    return collectionInfo.points_count || 0;
+  } catch (error) {
+    logger.error('❌ 패턴 수 조회 오류:', error.message);
+    return 0;
+  }
+}
 }

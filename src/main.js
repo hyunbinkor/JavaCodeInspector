@@ -211,9 +211,12 @@ program
  */
 program
   .command('batch')
-  .description('여러 이슈를 배치로 처리')
+  .description('여러 이슈를 배치로 처리하고 VectorDB에 저장')
   .option('-i, --input <dir>', '입력 디렉토리 경로')
-  .option('-o, --output <dir>', '출력 디렉토리 경로')
+  .option('-o, --output <dir>', '출력 디렉토리 경로 (JSON 저장)')
+  .option('--clear-existing', '기존 VectorDB 데이터 전체 삭제 후 저장')  // 추가
+  .option('--skip-existing', '이미 존재하는 패턴 건너뛰기')              // 추가
+  .option('--no-vector-db', 'VectorDB 저장 건너뛰기 (JSON만 생성)')     // 추가
   .action(async (options) => {
     try {
       await processBatchIssues(options);

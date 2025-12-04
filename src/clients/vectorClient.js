@@ -786,4 +786,45 @@ export class VectorClient {
       
     return stats;
   }
+
+  /**
+   * 모든 패턴 삭제
+   * @async
+   * @returns {Promise<{deleted: number}>}
+   */
+  async clearAllPatterns() {
+    logger.info('🗑️  모든 패턴 삭제 요청...');
+    return await this.adapter.clearAllPatterns();
+  }
+
+  /**
+   * 패턴 존재 여부 확인
+   * @async
+   * @param {string[]} issueRecordIds
+   * @returns {Promise<{exists: boolean, existingIds: string[], count: number}>}
+   */
+  async checkPatternsExist(issueRecordIds) {
+    return await this.adapter.checkPatternsExist(issueRecordIds);
+  }
+
+  /**
+   * 배치 패턴 저장
+   * @async
+   * @param {Object[]} datasets
+   * @param {Object} options
+   * @returns {Promise<{success: number, failed: number, skipped: number, errors: Array}>}
+   */
+  async batchStorePatterns(datasets, options = {}) {
+    logger.info(`📦 배치 패턴 저장 시작: ${datasets.length}개`);
+    return await this.adapter.batchStorePatterns(datasets, options);
+  }
+
+  /**
+   * 패턴 개수 조회
+   * @async
+   * @returns {Promise<number>}
+   */
+  async getPatternCount() {
+    return await this.adapter.getPatternCount();
+  }
 }

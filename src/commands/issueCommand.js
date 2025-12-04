@@ -45,21 +45,33 @@ export async function processSingleIssue(options) {
 }
 
 /**
- * 배치 이슈 처리
+ * 배치 이슈 처리 (수정됨)
  * 
- * 내부 흐름:
- * 1. 입력 디렉토리의 모든 JSON 파일 스캔
- * 2. 각 파일에 대해 processSingleIssue() 로직 반복 실행
- * 3. PatternDatasetGenerator로 배치 패턴 생성
- * 4. 생성된 패턴들을 출력 디렉토리에 저장
+ * @param {Object} options - CLI 옵션
+ * @param {string} options.input - 입력 디렉토리
+ * @param {string} options.output - 출력 디렉토리
+ * @param {boolean} options.clearExisting - 기존 데이터 전체 삭제 후 저장
+ * @param {boolean} options.skipExisting - 이미 존재하는 패턴 건너뛰기
+ * @param {boolean} options.noVectorDb - VectorDB 저장 건너뛰기
  */
 export async function processBatchIssues(options) {
+  const inputDir = options.input || process.env.SAMPLE_CODE_DIRECTORY;
+  
+  logger.info('\n' + '='.repeat(60));
+  logger.info('🚀 배치 처리 시작');
+  logger.info('='.repeat(60));
+  logger.info(`📂 입력 디렉토리: ${inputDir}`);
+  
+  if (options.output) {
+    logger.info(`📂 출력 디렉토리: ${options.output}`);
+  }
+  
+  logger.info(`🗑️  기존 데이터 삭제: ${options.clearExisting ? 'Yes' : 'No'}`);
+  logger.info(`⏭️  중복 건너뛰기: ${options.skipExisting ? 'Yes' : 'No'}`);
+  logger.info(`💾 VectorDB 저장: ${options.noVectorDb ? 'No' : 'Yes'}`);
 
-  logger.info('배치 처리 시작');
-  logger.info(`입력 디렉토리: ${process.env.ISSUE_RAW_DIRECTORY}`);
-
-  const issueFiles = await getJsonFiles(process.env.ISSUE_RAW_DIRECTORY);
-  logger.info(`발견된 이슈 파일: ${issueFiles.length}개`);
+  const issueFiles = await getJsonFiles(inputDir);
+  logger.info(`\n📋 발견된 이슈 파일: ${issueFiles.length}개`);
 
   if (issueFiles.length === 0) {
     logger.info('처리할 이슈 파일이 없습니다.');
@@ -72,7 +84,9 @@ export async function processBatchIssues(options) {
   const results = [];
   const errors = [];
 
-  // 각 JSON 파일을 순회하며 패턴 데이터셋 생성
+  // 1. 패턴 생성
+  logger.info('\n📊 패턴 생성 시작...');
+  
   for (let i = 0; i < issueFiles.length; i++) {
     const filePath = issueFiles[i];
     const fileName = path.basename(filePath);
@@ -80,7 +94,7 @@ export async function processBatchIssues(options) {
     try {
       logger.info(`\n처리 중 (${i + 1}/${issueFiles.length}): ${fileName}`);
 
-      const issueData = await loadData(fileName, 'issueRaw');
+      const issueData = await loadData(filePath, 'issueRaw');
       const patternDataset = await generator.generatePatternDataset(issueData);
 
       results.push(patternDataset);
@@ -90,28 +104,55 @@ export async function processBatchIssues(options) {
         await saveJsonData(patternDataset, outputPath, 'issuePattern');
       }
 
-      logger.info(`  완료: ${patternDataset.issue_record_id} (품질: ${patternDataset.validation_info.quality_score.toFixed(2)})`);
+      logger.info(`  ✅ 완료: ${patternDataset.issue_record_id}`);
 
     } catch (error) {
-      logger.error(`  실패: ${fileName} - ${error.message}`);
+      logger.error(`  ❌ 실패: ${fileName} - ${error.message}`);
       errors.push({ file: fileName, error: error.message });
     }
   }
 
-  // 배치 처리 결과 통계 출력
-  logger.info('\n배치 처리 결과 요약:');
-  logger.info(`성공: ${results.length}개`);
-  logger.info(`실패: ${errors.length}개`);
+  // 2. VectorDB 배치 저장
+  if (!options.noVectorDb && results.length > 0) {
+    logger.info('\n' + '='.repeat(60));
+    logger.info('💾 VectorDB 배치 저장 시작');
+    logger.info('='.repeat(60));
+    
+    const vectorClient = new VectorClient();
+    
+    const isConnected = await vectorClient.checkConnection();
+    if (!isConnected) {
+      logger.error('❌ VectorDB 연결 실패');
+      return { results, errors, vectorDbResult: null };
+    }
+    
+    await vectorClient.initializeSchema();
+    
+    const currentCount = await vectorClient.getPatternCount();
+    logger.info(`📊 현재 VectorDB 패턴 수: ${currentCount}개`);
+    
+    // ⭐ 핵심: 배치 저장 (기존 데이터 삭제 옵션 적용)
+    const vectorDbResult = await vectorClient.batchStorePatterns(results, {
+      clearExisting: options.clearExisting || false,
+      skipExisting: options.skipExisting || false,
+      batchSize: 10
+    });
+    
+    const newCount = await vectorClient.getPatternCount();
+    logger.info(`📊 저장 후 VectorDB 패턴 수: ${newCount}개`);
+  }
+
+  // 3. 결과 요약
+  logger.info('\n' + '='.repeat(60));
+  logger.info('📊 배치 처리 결과 요약');
+  logger.info('='.repeat(60));
+  logger.info(`✅ 성공: ${results.length}개`);
+  logger.info(`❌ 실패: ${errors.length}개`);
 
   if (results.length > 0) {
     const avgQuality = results.reduce((sum, r) => sum + r.validation_info.quality_score, 0) / results.length;
-    logger.info(`평균 품질 점수: ${avgQuality.toFixed(2)}`);
+    logger.info(`📈 평균 품질 점수: ${avgQuality.toFixed(2)}`);
   }
-
-  if (errors.length > 0) {
-    logger.info('\n실패한 파일들:');
-    errors.forEach(({ file, error }) => {
-      logger.info(`  - ${file}: ${error}`);
-    });
-  }
+  
+  return { results, errors };
 }
