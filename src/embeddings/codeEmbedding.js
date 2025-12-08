@@ -18,7 +18,7 @@
  * @module CodeEmbeddingGenerator
  */
 
-import { JavaASTParser } from './javaAstParser.js';
+import { JavaASTParser } from '../ast/javaAstParser.js';
 import { LLMAbstractionLayer } from '../clients/llmAbstractionLayer.js';
 import { GuidelineContextLoader } from '../utils/guidelineContextLoader.js';
 import { MetaInfoManager } from '../utils/metaInfoManager.js';

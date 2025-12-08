@@ -47,11 +47,11 @@ export async function extractGuidelinesFromGuide(options) {
     await extractor.initialize();
     logger.info('✅ 초기화 완료');
 
-    // PDF 파일 텍스트 추출 및 LLM으로 가이드라인 파싱
-    logger.info('\n📄 PDF 파일 분석 시작...');
+    // 개발 가이드 텍스트 추출 및 LLM으로 가이드라인 파싱
+    logger.info('\n📄 개발 가이드 분석 시작...');
     const startTime = Date.now();
 
-    await extractor.extractFromPDF(inputPath);
+    await extractor.extractFromDocument(inputPath);
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     logger.info(`⏱️ 추출 소요 시간: ${duration}초`);

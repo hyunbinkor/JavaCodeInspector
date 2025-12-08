@@ -90,6 +90,241 @@ export class DevelopmentGuidelineChecker {
   }
 
   /**
+   * checkType 값 정규화
+   * 
+   * LLM이 출력하는 다양한 checkType 값을 Checker가 처리할 수 있는 값으로 변환
+   * 
+   * 매핑:
+   * - static_analysis → regex
+   * - regex_with_validation → combined
+   * - 나머지는 그대로 유지
+   * - 알 수 없는 값은 regex로 폴백
+   * 
+   * @param {string} checkType - 원본 checkType 값
+   * @returns {string} 정규화된 checkType
+   */
+  normalizeCheckType(checkType) {
+    const mapping = {
+      'static_analysis': 'regex',
+      'regex_with_validation': 'combined',
+      'regex': 'regex',
+      'ast': 'ast',
+      'combined': 'combined',
+      'llm_contextual': 'llm_contextual'
+    };
+    return mapping[checkType] || 'regex';
+  }
+
+  /**
+   * 단일 패턴을 RegExp 객체로 변환
+   * 
+   * 지원하는 입력 형식:
+   * 1. RegExp 객체 → 그대로 반환
+   * 2. 문자열 → new RegExp(str, 'g')
+   * 3. { pattern, flags } → new RegExp(pattern, flags)
+   * 4. { pattern, flags, description } → new RegExp(pattern, flags)
+   * 5. { type, pattern, description } → new RegExp(pattern, 'g') (LLM 레거시 형식)
+   * 
+   * @param {any} p - 패턴 (다양한 형식)
+   * @param {string} ruleId - 로깅용 규칙 ID
+   * @returns {RegExp|null} RegExp 객체 또는 null (변환 실패 시)
+   */
+  normalizePattern(p, ruleId) {
+    // Case 1: 이미 RegExp 객체
+    if (p instanceof RegExp) {
+      return p;
+    }
+
+    // Case 2: 문자열
+    if (typeof p === 'string') {
+      const trimmed = p.trim();
+      if (!trimmed || trimmed.length < 2) {
+        return null;  // 빈 문자열 또는 너무 짧은 패턴
+      }
+      try {
+        return new RegExp(trimmed, 'g');
+      } catch (error) {
+        console.warn(`  ⚠️ [${ruleId}] 정규식 생성 실패: "${trimmed}" - ${error.message}`);
+        return null;
+      }
+    }
+
+    // Case 3: 객체 (pattern 필드 필수)
+    if (typeof p === 'object' && p !== null) {
+      const patternStr = p.pattern;
+
+      // pattern 필드 없으면 무효
+      if (!patternStr || typeof patternStr !== 'string') {
+        return null;
+      }
+
+      const trimmed = patternStr.trim();
+      if (!trimmed || trimmed.length < 2) {
+        return null;
+      }
+
+      // 너무 광범위한 패턴 필터링
+      const tooGeneric = ['.+', '.*', '\\w+', '\\w*', '\\s+', '\\s*', 
+                          '[a-z]+', '[A-Z]+', '[a-zA-Z]+', '\\d+', '\\d*'];
+      if (tooGeneric.includes(trimmed)) {
+        console.debug(`  ⏭️ [${ruleId}] 광범위한 패턴 스킵: "${trimmed}"`);
+        return null;
+      }
+
+      try {
+        return new RegExp(trimmed, p.flags || 'g');
+      } catch (error) {
+        console.warn(`  ⚠️ [${ruleId}] 정규식 생성 실패: "${trimmed}" - ${error.message}`);
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * patterns 배열을 antiPatterns/goodPatterns 구조로 정규화
+   * 
+   * 입력 형식 처리:
+   * 1. 기존 patterns 배열 → antiPatterns로 변환 (하위 호환성)
+   * 2. antiPatterns/goodPatterns가 이미 있으면 정규화만 수행
+   * 3. { type: 'negative', pattern } → antiPatterns
+   * 4. { type: 'positive', pattern } → goodPatterns
+   * 
+   * @param {object} guideline - 원본 가이드라인 객체
+   * @param {string} ruleId - 로깅용 규칙 ID
+   * @returns {object} { antiPatterns: RegExp[], goodPatterns: RegExp[] }
+   */
+  normalizePatternGroups(guideline, ruleId) {
+    const result = {
+      antiPatterns: [],
+      goodPatterns: []
+    };
+
+    // Case 1: 이미 antiPatterns/goodPatterns가 있는 경우 (새 형식)
+    if (guideline.antiPatterns && Array.isArray(guideline.antiPatterns)) {
+      guideline.antiPatterns.forEach(p => {
+        const regex = this.normalizePattern(p, ruleId);
+        if (regex) {
+          result.antiPatterns.push({
+            regex,
+            description: p.description || ''
+          });
+        }
+      });
+    }
+
+    if (guideline.goodPatterns && Array.isArray(guideline.goodPatterns)) {
+      guideline.goodPatterns.forEach(p => {
+        const regex = this.normalizePattern(p, ruleId);
+        if (regex) {
+          result.goodPatterns.push({
+            regex,
+            description: p.description || ''
+          });
+        }
+      });
+    }
+
+    // Case 2: 기존 patterns 배열 처리 (하위 호환성)
+    if (guideline.patterns && Array.isArray(guideline.patterns)) {
+      guideline.patterns.forEach(p => {
+        // type: 'positive'/'negative' 구분
+        if (typeof p === 'object' && p.type) {
+          const regex = this.normalizePattern(p, ruleId);
+          if (regex) {
+            if (p.type === 'positive') {
+              result.goodPatterns.push({ regex, description: p.description || '' });
+            } else {
+              // negative 또는 기타 → antiPatterns
+              result.antiPatterns.push({ regex, description: p.description || '' });
+            }
+          }
+        } else {
+          // type 없으면 antiPatterns로 (기존 동작 호환)
+          const regex = this.normalizePattern(p, ruleId);
+          if (regex) {
+            result.antiPatterns.push({ regex, description: '' });
+          }
+        }
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * astHints 필드명 정규화
+   * 
+   * 변환:
+   * - nodeType (단수) → nodeTypes (복수, 배열)
+   * - checkPoints → checkConditions
+   * 
+   * @param {object} astHints - 원본 astHints
+   * @returns {object} 정규화된 astHints
+   */
+  normalizeAstHints(astHints) {
+    if (!astHints || typeof astHints !== 'object') {
+      return null;
+    }
+
+    const normalized = {};
+
+    // nodeType → nodeTypes (배열로 변환)
+    if (astHints.nodeTypes && Array.isArray(astHints.nodeTypes)) {
+      normalized.nodeTypes = astHints.nodeTypes;
+    } else if (astHints.nodeType) {
+      // 단수형을 배열로 변환
+      normalized.nodeTypes = Array.isArray(astHints.nodeType) 
+        ? astHints.nodeType 
+        : [astHints.nodeType];
+    }
+
+    // checkPoints → checkConditions
+    if (astHints.checkConditions && Array.isArray(astHints.checkConditions)) {
+      normalized.checkConditions = astHints.checkConditions;
+    } else if (astHints.checkPoints && Array.isArray(astHints.checkPoints)) {
+      normalized.checkConditions = astHints.checkPoints;
+    }
+
+    // 기타 필드 유지
+    if (astHints.excludeContexts) {
+      normalized.excludeContexts = astHints.excludeContexts;
+    }
+    if (astHints.checkTarget) {
+      normalized.checkTarget = astHints.checkTarget;
+    }
+
+    return Object.keys(normalized).length > 0 ? normalized : null;
+  }
+
+  /**
+   * message 필드 생성 (없을 경우 폴백)
+   * 
+   * 우선순위:
+   * 1. message 필드가 있으면 사용
+   * 2. title + "규칙을 위반했습니다"
+   * 3. description 첫 문장
+   * 4. 기본 메시지
+   * 
+   * @param {object} guideline - 가이드라인 객체
+   * @returns {string} 위반 메시지
+   */
+  generateMessage(guideline) {
+    if (guideline.message && guideline.message.trim()) {
+      return guideline.message;
+    }
+    if (guideline.title) {
+      return `${guideline.title} 규칙을 위반했습니다`;
+    }
+    if (guideline.description) {
+      const firstSentence = guideline.description.split(/[.\n]/)[0];
+      return firstSentence.substring(0, 100).trim() || '코딩 가이드라인을 위반했습니다';
+    }
+    return '코딩 가이드라인을 위반했습니다';
+  }
+
+  /**
    * 개발가이드 룰 초기화 프로세스
    * 
    * 내부 흐름:
@@ -121,70 +356,116 @@ export class DevelopmentGuidelineChecker {
     logger.info(`✅ 개발가이드 룰 로딩 완료: 정적 ${this.staticRules.size}개, 맥락적 ${this.contextualRules.size}개`);
   }
 
-  /**
-   * VectorDB에서 가이드라인 규칙 로드
+/**
+   * VectorDB에서 가이드라인 규칙 로드 및 정규화
    * 
-   * 로딩 프로세스:
-   * 1. VectorDB에서 가이드라인 검색
-   * 2. checkType에 따라 분류:
-   *    - llm_contextual: contextualRules에 저장
-   *    - 기타 (regex, ast, combined): staticRules에 저장
-   * 3. 정규표현식 패턴 변환 및 검증
-   * 4. 커스텀 검증기 설정 (특수 규칙용)
-   * 5. 로드 실패 시 기본 규칙으로 폴백
+   * 수정 사항:
+   * 1. checkType 정규화 (static_analysis → regex 등)
+   * 2. patterns → antiPatterns/goodPatterns 변환
+   * 3. astHints 필드명 정규화
+   * 4. message 폴백 처리
+   * 5. contextual 규칙에 id 필드 추가
    */
   async loadGuidelineRules() {
     try {
-      // VectorDB에서 저장된 가이드라인 규칙 검색
       const guidelines = await this.vectorClient.searchGuidelines();
 
       if (guidelines && guidelines.length > 0) {
+        let staticCount = 0;
+        let contextualCount = 0;
+        let normalizedCount = 0;
+
         guidelines.forEach(guideline => {
-          // LLM 기반 컨텍스트 규칙은 별도 저장소에 저장
-          if (guideline.checkType === 'llm_contextual') {
-            this.contextualRules.set(guideline.ruleId, guideline);
-          } 
-          // 정적 규칙 (regex, ast, combined) 처리
-          else {
-            let patterns = [];
-            
-            // 정규표현식 패턴 변환 및 검증
-            if (guideline.patterns) {
-              if (Array.isArray(guideline.patterns)) {
-                patterns = guideline.patterns.map(p => {
-                  try {
-                    // 문자열 패턴을 RegExp 객체로 변환
-                    if (typeof p === 'string') {
-                      return new RegExp(p, 'g');
-                    }
-                    // 이미 RegExp 객체면 그대로 사용
-                    if (p instanceof RegExp) {
-                      return p;
-                    }
-                    // 객체 형태 패턴 (pattern, flags 포함)
-                    if (typeof p === 'object' && p.pattern) {
-                      return new RegExp(p.pattern, p.flags || 'g');
-                    }
-                    return null;
-                  } catch (error) {
-                    console.warn(`패턴 변환 실패 (${guideline.ruleId}):`, error.message);
-                    return null;
-                  }
-                }).filter(p => p !== null);
+          // ─────────────────────────────────────────────────────────
+          // Step 1: checkType 정규화
+          // ─────────────────────────────────────────────────────────
+          const originalCheckType = guideline.checkType;
+          const normalizedCheckType = this.normalizeCheckType(originalCheckType);
+
+          if (originalCheckType !== normalizedCheckType) {
+            console.debug(`  📝 checkType 정규화: ${guideline.ruleId} (${originalCheckType} → ${normalizedCheckType})`);
+            normalizedCount++;
+          }
+
+          // ─────────────────────────────────────────────────────────
+          // Step 2: LLM 컨텍스트 규칙 처리
+          // ─────────────────────────────────────────────────────────
+          if (normalizedCheckType === 'llm_contextual') {
+            // keywords 검증 및 폴백
+            let keywords = guideline.keywords;
+            if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+              // title과 description에서 키워드 추출 시도
+              keywords = this.extractKeywordsFromText(guideline.title, guideline.description);
+              if (keywords.length === 0) {
+                console.warn(`  ⚠️ [${guideline.ruleId}] keywords 없음 - 규칙 스킵`);
+                return;  // 키워드 없으면 스킵
               }
             }
 
+            // examples 검증
+            let examples = guideline.examples;
+            if (!examples || typeof examples !== 'object') {
+              examples = { good: [], bad: [] };
+            }
+            if (!Array.isArray(examples.good)) examples.good = [];
+            if (!Array.isArray(examples.bad)) examples.bad = [];
+
+            this.contextualRules.set(guideline.ruleId, {
+              id: guideline.ruleId,  // id 필드 추가 (프롬프트에서 사용)
+              ruleId: guideline.ruleId,
+              title: guideline.title,
+              category: guideline.category || 'general',
+              checkType: 'llm_contextual',
+              description: guideline.description || '',
+              severity: guideline.severity || 'MEDIUM',
+              keywords: keywords,
+              examples: examples,
+              businessRules: guideline.businessRules || []
+            });
+            contextualCount++;
+          }
+          // ─────────────────────────────────────────────────────────
+          // Step 3: 정적 규칙 처리 (regex, ast, combined)
+          // ─────────────────────────────────────────────────────────
+          else {
+            // patterns/antiPatterns/goodPatterns 정규화
+            const patternGroups = this.normalizePatternGroups(guideline, guideline.ruleId);
+
+            // astHints 정규화
+            const normalizedAstHints = this.normalizeAstHints(guideline.astHints);
+
+            // message 생성
+            const message = this.generateMessage(guideline);
+
+            // 유효성 검증
+            const hasPatterns = patternGroups.antiPatterns.length > 0 || patternGroups.goodPatterns.length > 0;
+            const hasAstHints = normalizedAstHints && normalizedAstHints.nodeTypes;
+
+            // regex 타입인데 패턴 없으면 스킵
+            if (normalizedCheckType === 'regex' && !hasPatterns) {
+              console.warn(`  ⚠️ [${guideline.ruleId}] regex 규칙이지만 유효한 패턴 없음 - 스킵`);
+              return;
+            }
+
+            // ast 타입인데 astHints 없으면 스킵
+            if (normalizedCheckType === 'ast' && !hasAstHints) {
+              console.warn(`  ⚠️ [${guideline.ruleId}] ast 규칙이지만 astHints 없음 - 스킵`);
+              return;
+            }
+
+            // combined 타입은 둘 중 하나라도 있어야 함
+            if (normalizedCheckType === 'combined' && !hasPatterns && !hasAstHints) {
+              console.warn(`  ⚠️ [${guideline.ruleId}] combined 규칙이지만 패턴과 astHints 모두 없음 - 스킵`);
+              return;
+            }
+
             // 특수 규칙용 커스텀 검증기 설정
-            // Cast 연산자 규칙: 메서드 호출과 제어문을 제외한 실제 캐스팅만 탐지
             let customValidator = null;
             if (guideline.ruleId === 'code_style.3_7_3' ||
-              guideline.title?.includes('Cast Operator')) {
+                guideline.title?.includes('Cast Operator')) {
               customValidator = (line) => {
-                // 메서드 호출 패턴 제외: method().field
                 if (/\w+\s*\([^)]*\)\s*\./.test(line)) return false;
-                // 제어문 제외: if(), while(), for(), switch()
                 if (/^\s*(if|while|for|switch)\s*\(/.test(line)) return false;
-                // 실제 캐스트 패턴: (Type) variable
                 return /\(\s*[A-Z][a-zA-Z0-9<>]*\s*\)\s+[a-zA-Z_]/.test(line);
               };
             }
@@ -193,37 +474,69 @@ export class DevelopmentGuidelineChecker {
             this.staticRules.set(guideline.ruleId, {
               id: guideline.ruleId,
               title: guideline.title,
-              category: guideline.category,
-              checkType: guideline.checkType,
-              patterns: patterns,
+              category: guideline.category || 'general',
+              checkType: normalizedCheckType,
+              antiPatterns: patternGroups.antiPatterns,
+              goodPatterns: patternGroups.goodPatterns,
+              // 하위 호환성: patterns도 유지 (antiPatterns의 regex만)
+              patterns: patternGroups.antiPatterns.map(p => p.regex),
+              astHints: normalizedAstHints,
               severity: guideline.severity || 'MEDIUM',
-              message: guideline.message,
-              examples: guideline.examples || [],
+              message: message,
+              examples: guideline.examples || { good: [], bad: [] },
               customValidator: customValidator
             });
+            staticCount++;
           }
         });
+
+        logger.info(`  📊 가이드라인 로드 완료: 정적 ${staticCount}개, 컨텍스트 ${contextualCount}개`);
+        if (normalizedCount > 0) {
+          logger.info(`  📊 checkType 정규화: ${normalizedCount}개 규칙 변환됨`);
+        }
       } else {
-        // VectorDB에 규칙이 없으면 기본 규칙 사용
         this.initializeDefaultRules();
       }
     } catch (error) {
-      // 로드 실패 시 기본 규칙으로 폴백
       console.warn('가이드라인 룰 로딩 실패, 기본 룰 사용:', error.message);
       this.initializeDefaultRules();
     }
   }
 
   /**
-   * 기본 정적 규칙 초기화 (하드코딩)
+   * 텍스트에서 키워드 추출 (keywords 폴백용)
+   */
+  extractKeywordsFromText(title, description) {
+    const keywords = new Set();
+    const text = `${title || ''} ${description || ''}`;
+
+    // 한글 단어 (2글자 이상)
+    const koreanWords = text.match(/[가-힣]{2,}/g) || [];
+    koreanWords.forEach(w => keywords.add(w));
+
+    // 영문 단어 (CamelCase 분리)
+    const englishWords = text.match(/[A-Z][a-z]+|[a-z]+|[A-Z]+/g) || [];
+    englishWords.forEach(w => {
+      if (w.length >= 3) keywords.add(w);
+    });
+
+    // Java 관련 키워드 우선
+    const javaKeywords = ['class', 'method', 'public', 'private', 'static', 
+                          'void', 'String', 'int', 'LData', 'LMultiData',
+                          'try', 'catch', 'Exception', 'throw'];
+    javaKeywords.forEach(kw => {
+      if (text.toLowerCase().includes(kw.toLowerCase())) {
+        keywords.add(kw);
+      }
+    });
+
+    return Array.from(keywords).slice(0, 10);
+  }
+
+  /**
+   * 기본 정적 규칙 초기화 (개선 버전)
    * 
-   * VectorDB 로드 실패 시 사용되는 폴백 규칙:
-   * - 들여쓰기 규칙 (탭 vs 공백)
-   * - 메서드명과 괄호 사이 공백
-   * - 라인 길이 제한 (100자)
-   * - 변수 선언 규칙 (한 줄에 하나)
-   * - Cast 연산자 공백 규칙
-   * - 줄 끝 공백 및 다중 공백
+   * antiPatterns/goodPatterns 형식 사용
    */
   initializeDefaultRules() {
     const defaultStaticRules = [
@@ -232,7 +545,11 @@ export class DevelopmentGuidelineChecker {
         title: '4칸 공백 들여쓰기',
         category: 'formatting',
         checkType: 'regex',
-        patterns: [/\t/g],  // 탭 문자 탐지
+        antiPatterns: [
+          { regex: /\t/g, description: '탭 문자 사용' }
+        ],
+        goodPatterns: [],
+        patterns: [/\t/g],  // 하위 호환
         severity: 'LOW',
         message: '탭 대신 4칸 공백을 사용해야 합니다'
       },
@@ -241,7 +558,11 @@ export class DevelopmentGuidelineChecker {
         title: '메서드명과 괄호 사이 공백 금지',
         category: 'formatting',
         checkType: 'regex',
-        patterns: [/\w\s+\(/g],  // method () 형태 탐지
+        antiPatterns: [
+          { regex: /\w\s+\(/g, description: '메서드명과 괄호 사이 공백' }
+        ],
+        goodPatterns: [],
+        patterns: [/\w\s+\(/g],
         severity: 'LOW',
         message: '메서드 이름과 괄호 사이에 공백이 있습니다'
       },
@@ -250,7 +571,11 @@ export class DevelopmentGuidelineChecker {
         title: '라인 길이 제한',
         category: 'formatting',
         checkType: 'regex',
-        patterns: [/.{101,}/],  // 101자 이상 라인 탐지
+        antiPatterns: [
+          { regex: /.{101,}/, description: '100자 초과' }
+        ],
+        goodPatterns: [],
+        patterns: [/.{101,}/],
         severity: 'LOW',
         message: '한 라인이 100자를 초과합니다'
       },
@@ -259,29 +584,34 @@ export class DevelopmentGuidelineChecker {
         title: '한 라인에 하나의 변수만 선언',
         category: 'code_style',
         checkType: 'regex',
-        patterns: [/\w+\s+\w+.*,.*\w+/],  // int a, b 형태 탐지
+        antiPatterns: [
+          { regex: /^\s*(int|long|double|float|String|boolean|char|byte|short)\s+\w+\s*,\s*\w+/, description: '한 줄에 여러 변수 선언' }
+        ],
+        goodPatterns: [],
+        patterns: [/\w+\s+\w+.*,.*\w+/],
         severity: 'MEDIUM',
         message: '한 라인에 하나의 변수만 선언해야 합니다'
       },
       {
         id: 'code_style.3_7_3',
-        title: 'Cast Operator Cast 연산자를 사용할 때는 공백의 사용을 최소화 해야 한다',
+        title: 'Cast Operator 공백 규칙',
         category: 'code_style',
         checkType: 'regex',
+        antiPatterns: [
+          { regex: /\(\s*[A-Z][a-zA-Z0-9<>]*\s*\)\s{2,}[a-zA-Z_]/g, description: '캐스트 후 공백 2개 이상' },
+          { regex: /\(\s+[A-Z][a-zA-Z0-9<>]*\s+\)\s*[a-zA-Z_]/g, description: '캐스트 괄호 내부 공백' }
+        ],
+        goodPatterns: [],
         patterns: [
-          /\(\s*[A-Z][a-zA-Z0-9<>]*\s*\)\s{2,}[a-zA-Z_]/g,  // (Type)  var (공백 2개 이상)
-          /\(\s+[A-Z][a-zA-Z0-9<>]*\s+\)\s*[a-zA-Z_]/g     // ( Type ) var (괄호 내부 공백)
+          /\(\s*[A-Z][a-zA-Z0-9<>]*\s*\)\s{2,}[a-zA-Z_]/g,
+          /\(\s+[A-Z][a-zA-Z0-9<>]*\s+\)\s*[a-zA-Z_]/g
         ],
         severity: 'LOW',
-        message: 'Cast 연산자 사용 시 공백을 최소화해야 합니다. 예: (Type)variable',
+        message: 'Cast 연산자 사용 시 공백을 최소화해야 합니다',
         customValidator: (line) => {
-          // 메서드 호출 제외
           if (/\w+\s*\([^)]*\)\s*\./.test(line)) return false;
-          // 제어문 제외
           if (/^\s*(if|while|for|switch)\s*\(/.test(line)) return false;
-          // 실제 캐스트만 검출
-          const castPattern = /\(\s*[A-Z][a-zA-Z0-9<>]*\s*\)\s+[a-zA-Z_]/;
-          return castPattern.test(line);
+          return /\(\s*[A-Z][a-zA-Z0-9<>]*\s*\)\s+[a-zA-Z_]/.test(line);
         }
       },
       {
@@ -289,7 +619,11 @@ export class DevelopmentGuidelineChecker {
         title: '줄 끝 공백',
         category: 'formatting',
         checkType: 'regex',
-        patterns: [/\s+$/],  // 라인 끝 공백 탐지
+        antiPatterns: [
+          { regex: /\s+$/, description: '라인 끝 공백' }
+        ],
+        goodPatterns: [],
+        patterns: [/\s+$/],
         severity: 'LOW',
         message: '줄 끝에 불필요한 공백이 있습니다'
       },
@@ -298,7 +632,11 @@ export class DevelopmentGuidelineChecker {
         title: '다중 공백',
         category: 'formatting',
         checkType: 'regex',
-        patterns: [/\s{2,}/],  // 연속 공백 탐지
+        antiPatterns: [
+          { regex: /[^\s]\s{2,}[^\s*]/, description: '연속 공백 (들여쓰기/주석 제외)' }
+        ],
+        goodPatterns: [],
+        patterns: [/\s{2,}/],
         severity: 'LOW',
         message: '불필요한 다중 공백이 있습니다'
       }
@@ -307,6 +645,8 @@ export class DevelopmentGuidelineChecker {
     defaultStaticRules.forEach(rule => {
       this.staticRules.set(rule.id, rule);
     });
+
+    logger.info(`  📋 기본 규칙 로드: ${defaultStaticRules.length}개`);
   }
 
   /**
@@ -478,70 +818,136 @@ export class DevelopmentGuidelineChecker {
   }
 
   /**
-   * 정규표현식 기반 규칙 검사
+   * 정규표현식 기반 규칙 검사 (개선 버전)
    * 
-   * 검사 프로세스:
-   * 1. 소스코드를 라인별로 분리
-   * 2. 각 라인에 대해 모든 패턴 테스트
-   * 3. 커스텀 검증기가 있으면 추가 검증
-   * 4. 패턴 매치 시 위반사항 생성
+   * 검사 로직:
+   * 1. antiPatterns: 매칭되면 위반 (나쁜 패턴)
+   * 2. goodPatterns: 하나도 안 맞으면 위반 (좋은 패턴이 없음)
+   * 3. 하위 호환성: 기존 patterns 배열도 antiPatterns로 처리
    * 
-   * 패턴 처리:
-   * - RegExp 객체: 바로 사용
-   * - 문자열: RegExp로 변환
-   * - 객체: pattern과 flags 추출하여 변환
-   * 
-   * 중복 방지:
-   * - 같은 라인에서 같은 규칙은 한 번만 보고
-   * 
-   * @returns {array} 정규식 검사 위반사항
+   * @param {string} sourceCode - 검사할 소스코드
+   * @param {object} rule - 규칙 객체
+   * @returns {array} 위반사항 배열
    */
   checkRegexRule(sourceCode, rule) {
     const violations = [];
     const lines = sourceCode.split('\n');
 
-    // 패턴 유효성 검증
-    if (!rule.patterns || !Array.isArray(rule.patterns) || rule.patterns.length === 0) {
-      console.warn(`  ⚠️ 룰 ${rule.id}에 유효한 patterns가 없음`);
+    // antiPatterns 가져오기 (새 형식 또는 하위 호환)
+    const antiPatterns = rule.antiPatterns || [];
+    
+    // goodPatterns 가져오기
+    const goodPatterns = rule.goodPatterns || [];
+
+    // 기존 patterns 배열 호환 (antiPatterns가 없을 때만)
+    let legacyPatterns = [];
+    if (antiPatterns.length === 0 && rule.patterns && Array.isArray(rule.patterns)) {
+      legacyPatterns = rule.patterns.map(p => {
+        if (p instanceof RegExp) return { regex: p, description: '' };
+        if (typeof p === 'string') {
+          try { return { regex: new RegExp(p, 'g'), description: '' }; }
+          catch { return null; }
+        }
+        if (typeof p === 'object' && p.pattern) {
+          try { return { regex: new RegExp(p.pattern, p.flags || 'g'), description: p.description || '' }; }
+          catch { return null; }
+        }
+        return null;
+      }).filter(p => p !== null);
+    }
+
+    // 실제 사용할 antiPatterns
+    const effectiveAntiPatterns = antiPatterns.length > 0 ? antiPatterns : legacyPatterns;
+
+    // 유효성 검증
+    if (effectiveAntiPatterns.length === 0 && goodPatterns.length === 0) {
+      console.warn(`  ⚠️ 룰 ${rule.id}에 유효한 패턴이 없음`);
       return violations;
     }
 
-    // 각 라인에 대해 패턴 검사
+    // 각 라인에 대해 검사
     lines.forEach((line, index) => {
+      const lineNum = index + 1;
+      const trimmedLine = line.trim();
+
+      // 빈 라인은 스킵 (goodPatterns 검사 시 오탐 방지)
+      if (!trimmedLine) return;
+
       // 커스텀 검증기가 있고 통과하지 못하면 스킵
       if (rule.customValidator && !rule.customValidator(line)) {
         return;
       }
 
-      // 모든 패턴에 대해 테스트
-      rule.patterns.forEach(pattern => {
-        let regex;
-        try {
-          // 패턴을 RegExp로 변환
-          if (pattern instanceof RegExp) {
-            regex = pattern;
-          } else if (typeof pattern === 'string') {
-            regex = new RegExp(pattern, 'g');
-          } else if (typeof pattern === 'object' && pattern.pattern) {
-            regex = new RegExp(pattern.pattern, pattern.flags || 'g');
-          } else {
-            console.warn(`  ⚠️ 룰 ${rule.id}의 패턴을 정규식으로 변환할 수 없음:`, typeof pattern);
-            return;
-          }
-        } catch (error) {
-          console.warn(`  ⚠️ 정적 룰 ${rule.id} 정규식 생성 실패:`, error.message);
-          return;
-        }
+      // ─────────────────────────────────────────────────────────
+      // 1. antiPatterns 검사: 매칭되면 위반
+      // ─────────────────────────────────────────────────────────
+      for (const ap of effectiveAntiPatterns) {
+        const regex = ap.regex || ap;  // RegExp 직접 또는 객체
+        if (!(regex instanceof RegExp)) continue;
 
         try {
-          // RegExp 상태 초기화 (이전 test 영향 제거)
           regex.lastIndex = 0;
-
-          // 패턴 매칭 테스트
           if (regex.test(line)) {
-            // 같은 라인, 같은 규칙 중복 체크
+            // 중복 체크
             const alreadyReported = violations.some(v =>
-              v.line === index + 1 && v.ruleId === rule.id
+              v.line === lineNum && v.ruleId === rule.id
+            );
+
+            if (!alreadyReported) {
+              regex.lastIndex = 0;
+              violations.push({
+                ruleId: rule.id,
+                title: rule.title,
+                category: rule.category,
+                severity: rule.severity,
+                message: rule.message || ap.description || `${rule.title} 규칙 위반`,
+                line: lineNum,
+                column: line.search(regex),
+                matchType: 'anti-pattern',
+                patternDescription: ap.description || '',
+                fixable: true,
+                source: 'development_guideline'
+              });
+              break;  // 한 라인에서 하나의 위반만 보고
+            }
+          }
+          regex.lastIndex = 0;
+        } catch (error) {
+          console.warn(`  ⚠️ 룰 ${rule.id} antiPattern 테스트 실패:`, error.message);
+        }
+      }
+
+      // ─────────────────────────────────────────────────────────
+      // 2. goodPatterns 검사: 하나도 안 맞으면 위반
+      // ─────────────────────────────────────────────────────────
+      if (goodPatterns.length > 0) {
+        // 이 라인이 goodPatterns 검사 대상인지 확인
+        // (특정 컨텍스트에서만 적용해야 할 수 있음)
+        const shouldCheckGoodPattern = this.shouldCheckGoodPattern(line, rule);
+        
+        if (shouldCheckGoodPattern) {
+          let hasGoodMatch = false;
+
+          for (const gp of goodPatterns) {
+            const regex = gp.regex || gp;
+            if (!(regex instanceof RegExp)) continue;
+
+            try {
+              regex.lastIndex = 0;
+              if (regex.test(line)) {
+                hasGoodMatch = true;
+                break;
+              }
+              regex.lastIndex = 0;
+            } catch (error) {
+              console.warn(`  ⚠️ 룰 ${rule.id} goodPattern 테스트 실패:`, error.message);
+            }
+          }
+
+          if (!hasGoodMatch) {
+            // 중복 체크
+            const alreadyReported = violations.some(v =>
+              v.line === lineNum && v.ruleId === rule.id
             );
 
             if (!alreadyReported) {
@@ -550,24 +956,58 @@ export class DevelopmentGuidelineChecker {
                 title: rule.title,
                 category: rule.category,
                 severity: rule.severity,
-                message: rule.message,
-                line: index + 1,
-                column: line.search(regex),  // 매칭 위치
+                message: rule.message || `${rule.title} 규칙을 따르지 않았습니다`,
+                line: lineNum,
+                column: 0,
+                matchType: 'missing-good-pattern',
                 fixable: true,
                 source: 'development_guideline'
               });
             }
           }
-
-          // RegExp 상태 초기화 (다음 테스트 준비)
-          regex.lastIndex = 0;
-        } catch (testError) {
-          console.warn(`  ⚠️ 룰 ${rule.id} 라인 ${index + 1} 테스트 실패:`, testError.message);
         }
-      });
+      }
     });
 
     return violations;
+  }
+
+  /**
+   * goodPatterns 검사 대상 라인인지 확인
+   * 
+   * 모든 라인에 대해 goodPatterns를 검사하면 오탐이 많아짐
+   * 규칙의 특성에 따라 특정 라인만 검사해야 함
+   * 
+   * @param {string} line - 검사할 라인
+   * @param {object} rule - 규칙 객체
+   * @returns {boolean} 검사 대상 여부
+   */
+  shouldCheckGoodPattern(line, rule) {
+    // 기본적으로 빈 라인, 주석, import 문은 제외
+    const trimmed = line.trim();
+    
+    // 빈 라인
+    if (!trimmed) return false;
+    
+    // 주석
+    if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
+      return false;
+    }
+    
+    // import/package 문
+    if (trimmed.startsWith('import ') || trimmed.startsWith('package ')) {
+      return false;
+    }
+
+    // 규칙별 특수 처리
+    // 예: 들여쓰기 규칙은 코드 라인만 검사
+    if (rule.category === 'formatting' && rule.title?.includes('들여쓰기')) {
+      // 코드 시작 라인만 (공백 제외한 내용이 있는 라인)
+      return trimmed.length > 0;
+    }
+
+    // 기본: 검사 대상
+    return true;
   }
 
   /**
@@ -1077,31 +1517,31 @@ export class DevelopmentGuidelineChecker {
   }
 
   /**
-   * 적용 가능한 컨텍스트 규칙 필터링
+   * 적용 가능한 컨텍스트 규칙 필터링 (개선 버전)
    * 
-   * 필터링 전략:
-   * - 각 규칙의 keywords와 소스코드 매칭
-   * - 하나라도 매칭되면 적용 가능한 규칙으로 판단
-   * - 대소문자 무시 비교
+   * 수정 사항:
+   * - keywords 없을 때 에러 방지
+   * - keywords 배열 검증
    * 
-   * 효과:
-   * - 불필요한 LLM 호출 방지
-   * - 비용 및 시간 절약
-   * 
-   * 예시:
-   * - 'LData' 키워드가 있는 규칙은 LData 사용 코드에만 적용
-   * - 'Controller' 키워드가 있는 규칙은 Controller 클래스에만 적용
-   * 
+   * @param {string} sourceCode - 소스 코드
    * @returns {array} 적용 가능한 규칙 목록
    */
   filterApplicableContextualRules(sourceCode) {
     const applicable = [];
+    const lowerCode = sourceCode.toLowerCase();
 
     for (const [ruleId, rule] of this.contextualRules) {
+      // keywords 검증
+      if (!rule.keywords || !Array.isArray(rule.keywords) || rule.keywords.length === 0) {
+        console.warn(`  ⚠️ [${ruleId}] keywords 없음 - 필터링에서 제외`);
+        continue;
+      }
+
       // 규칙의 키워드 중 하나라도 코드에 포함되어 있는지 확인
-      const hasRelevantKeywords = rule.keywords.some(keyword =>
-        sourceCode.toLowerCase().includes(keyword.toLowerCase())
-      );
+      const hasRelevantKeywords = rule.keywords.some(keyword => {
+        if (typeof keyword !== 'string') return false;
+        return lowerCode.includes(keyword.toLowerCase());
+      });
 
       if (hasRelevantKeywords) {
         applicable.push(rule);
@@ -1112,39 +1552,29 @@ export class DevelopmentGuidelineChecker {
   }
 
   /**
-   * 컨텍스트 규칙 배치 검사 (LLM 호출)
-   * 
-   * 프롬프트 구조:
-   * 1. 검사 대상 코드 (최대 2000자)
-   * 2. 각 가이드라인:
-   *    - 제목 및 ID
-   *    - 규칙 설명
-   *    - 올바른 예시 (good)
-   *    - 잘못된 예시 (bad)
-   * 3. 응답 형식 (JSON)
-   * 
-   * LLM 응답:
-   * - violations 배열
-   * - 각 위반: ruleId, violation(boolean), line, description, suggestion
-   * 
-   * 장점:
-   * - 3개 규칙을 한 번의 API 호출로 검사
-   * - 비용 효율적
-   * 
-   * @returns {array} 배치 검사 위반사항
+   * 컨텍스트 규칙 배치 검사 (개선 버전)
    */
   async checkContextualRulesBatch(sourceCode, rules) {
     // 각 규칙의 정보를 프롬프트 형식으로 변환
-    const rulesDescription = rules.map(rule => `
-### ${rule.title} (${rule.id})
-${rule.description}
+    const rulesDescription = rules.map(rule => {
+      // id 필드 안전하게 접근
+      const ruleId = rule.id || rule.ruleId || 'unknown';
+      
+      // examples 안전하게 접근
+      const goodExamples = rule.examples?.good || [];
+      const badExamples = rule.examples?.bad || [];
+      
+      return `
+### ${rule.title} (${ruleId})
+${rule.description || ''}
 
 올바른 예시:
-${rule.examples.good.map(ex => `- ${ex}`).join('\n')}
+${goodExamples.map(ex => `- ${ex}`).join('\n') || '- (없음)'}
 
 잘못된 예시:  
-${rule.examples.bad.map(ex => `- ${ex}`).join('\n')}
-`).join('\n---\n');
+${badExamples.map(ex => `- ${ex}`).join('\n') || '- (없음)'}
+`;
+    }).join('\n---\n');
 
     // LLM 프롬프트 구성
     const prompt = `다음 Java 코드가 제시된 개발 가이드라인들을 준수하는지 검사해주세요.
@@ -1166,7 +1596,7 @@ ${rulesDescription}
     {
       "ruleId": "규칙 ID",
       "title": "규칙 제목",
-      "violation": true/false,
+      "violation": true,
       "line": 위반 라인 번호,
       "description": "구체적인 위반 내용 설명",
       "suggestion": "수정 제안"
@@ -1177,13 +1607,12 @@ ${rulesDescription}
 
 위반사항이 없으면 violations 배열을 빈 배열로 반환해주세요.`;
 
-    // LLM 호출 (temperature 낮게 = 일관된 응답)
+    // LLM 호출
     const response = await this.llmService.generateCompletion(prompt, {
       temperature: 0.1,
       num_predict: 1000
     });
 
-    // JSON 응답 파싱 및 위반사항 변환
     return this.parseLLMContextualResponse(response, rules);
   }
 

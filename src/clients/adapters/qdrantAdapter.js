@@ -25,7 +25,8 @@ export class QdrantAdapter {
     const clientOptions = { 
       host: qdrantConfig.host,
       https: qdrantConfig.https,
-      port: qdrantConfig.port
+      port: qdrantConfig.port,
+      checkCompatibility: false
     };
     
     // API 키가 있으면 추가
