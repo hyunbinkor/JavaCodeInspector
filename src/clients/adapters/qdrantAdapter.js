@@ -313,12 +313,44 @@ export class QdrantAdapter {
         with_vector: false
       });
 
-      return scrollResult.points.map(point => ({
-        issueRecordId: point.payload.issueRecordId,
-        title: point.payload.title,
-        category: point.payload.category,
-        severity: point.payload.severity
-      }));
+      if (point.payload.patternData) {
+        try {
+          return JSON.parse(point.payload.patternData);
+        } catch (e) {
+          console.warn('patternData 파싱 실패:', e.message);
+        }
+      }
+      
+      return scrollResult.points.map(point => {
+        if (point.payload.patternData) {
+          try {
+            return JSON.parse(point.payload.patternData);
+          } catch (e) {
+            console.warn('patternData 파싱 실패:', e.message);
+          }
+        }
+        
+        return {
+          issue_record_id: point.payload.issueRecordId,
+          issueRecordId: point.payload.issueRecordId,
+          metadata: {
+            title: point.payload.title,
+            category: point.payload.category,
+            severity: point.payload.severity
+          },
+          category: point.payload.category,
+          title: point.payload.title,
+          anti_pattern: point.payload.antiPatternCode ? {
+            code_template: point.payload.antiPatternCode,
+            pattern_signature: {
+              semantic_signature: point.payload.semanticSignature?.split(',') || []
+            }
+          } : null,
+          recommended_pattern: point.payload.recommendedPatternCode ? {
+            code_template: point.payload.recommendedPatternCode
+          } : null
+        };
+      });
     } catch (error) {
       logger.error('전체 패턴 조회 오류:', error.message);
       return [];
@@ -329,15 +361,58 @@ export class QdrantAdapter {
     try {
       const id = uuidv4();
       
-      // patterns 배열을 JSON 문자열로 변환
+      // ────────────────────────────────────────────────────────────────────
+      // antiPatterns 처리 (신규)
+      // ────────────────────────────────────────────────────────────────────
+      const antiPatternsArray = (guideline.antiPatterns || []).map(p => {
+        if (typeof p === 'string') {
+          return { pattern: p, flags: 'g', description: '' };
+        }
+        if (p instanceof RegExp) {
+          return { pattern: p.source, flags: p.flags || 'g', description: '' };
+        }
+        if (typeof p === 'object' && p.pattern) {
+          return {
+            pattern: typeof p.pattern === 'string' ? p.pattern : p.pattern.source,
+            flags: p.flags || (p.pattern.flags) || 'g',
+            description: p.description || ''
+          };
+        }
+        return null;
+      }).filter(p => p !== null);
+  
+      // ────────────────────────────────────────────────────────────────────
+      // goodPatterns 처리 (신규)
+      // ────────────────────────────────────────────────────────────────────
+      const goodPatternsArray = (guideline.goodPatterns || []).map(p => {
+        if (typeof p === 'string') {
+          return { pattern: p, flags: 'g', description: '' };
+        }
+        if (p instanceof RegExp) {
+          return { pattern: p.source, flags: p.flags || 'g', description: '' };
+        }
+        if (typeof p === 'object' && p.pattern) {
+          return {
+            pattern: typeof p.pattern === 'string' ? p.pattern : p.pattern.source,
+            flags: p.flags || (p.pattern.flags) || 'g',
+            description: p.description || ''
+          };
+        }
+        return null;
+      }).filter(p => p !== null);
+  
+      // ────────────────────────────────────────────────────────────────────
+      // 레거시 patterns 처리 (기존 호환)
+      // ────────────────────────────────────────────────────────────────────
       const patternsArray = (guideline.patterns || []).map(p => {
         if (typeof p === 'string') return p;
+        if (p instanceof RegExp) return p.source;
         if (typeof p === 'object' && p.pattern) {
           return p.description ? `${p.pattern} (${p.description})` : p.pattern;
         }
         return JSON.stringify(p);
       });
-
+  
       // 벡터 준비 및 차원 검증
       let vector = guideline.embedding || this.createDummyVector();
       if (vector.length !== this.vectorDimensions) {
@@ -350,7 +425,7 @@ export class QdrantAdapter {
         console.warn(`⚠️ 가이드라인 벡터 유효하지 않음, 더미 벡터 사용`);
         vector = this.createDummyVector();
       }
-
+  
       const point = {
         id,
         vector,
@@ -360,22 +435,30 @@ export class QdrantAdapter {
           category: guideline.category,
           checkType: guideline.checkType,
           description: guideline.description || '',
-          keywords: JSON.stringify(guideline.keywords || []), // 배열을 JSON 문자열로
+          keywords: JSON.stringify(guideline.keywords || []),
           severity: guideline.severity,
           examples: JSON.stringify(guideline.examples || {}),
-          patterns: JSON.stringify(patternsArray), // 배열을 JSON 문자열로
+          
+          // ✅ 신규 필드 - antiPatterns, goodPatterns, astHints
+          antiPatterns: JSON.stringify(antiPatternsArray),
+          goodPatterns: JSON.stringify(goodPatternsArray),
+          astHints: JSON.stringify(guideline.astHints || {}),
+          
+          // 레거시 호환
+          patterns: JSON.stringify(patternsArray),
+          
           message: guideline.message || '',
           parentChapter: guideline.parentChapter || '',
           isActive: guideline.isActive !== false
         }
       };
-
+  
       await this.client.upsert(this.guidelineCollectionName, {
         wait: true,
         points: [point]
       });
-
-      logger.info(`✅ 가이드라인 저장 완료: ${guideline.ruleId}`);
+  
+      logger.info(`✅ 가이드라인 저장 완료: ${guideline.ruleId} (antiPatterns: ${antiPatternsArray.length}, goodPatterns: ${goodPatternsArray.length})`);
       return id;
     } catch (error) {
       logger.error(`가이드라인 저장 오류 (${guideline.ruleId}):`, error.message);
@@ -385,40 +468,50 @@ export class QdrantAdapter {
       throw error;
     }
   }
+  
 
   async searchGuidelines(filters = {}) {
     try {
       const must = [];
-
+  
       if (filters.category) {
         must.push({ key: 'category', match: { value: filters.category } });
       }
-
+  
       if (filters.checkType) {
         must.push({ key: 'checkType', match: { value: filters.checkType } });
       }
-
+  
       if (filters.isActive !== undefined) {
         must.push({ key: 'isActive', match: { value: filters.isActive } });
       }
-
+  
       const scrollResult = await this.client.scroll(this.guidelineCollectionName, {
         filter: must.length > 0 ? { must } : undefined,
         limit: filters.limit || 100,
         with_payload: true,
         with_vector: false
       });
-
+  
       return scrollResult.points.map(point => ({
         ruleId: point.payload.ruleId,
+        id: point.payload.ruleId,  // 하위 호환
         title: point.payload.ruleTitle,
         category: point.payload.category,
         checkType: point.payload.checkType,
         description: point.payload.description,
-        keywords: this.parseJSON(point.payload.keywords), // JSON 파싱
+        keywords: this.parseJSON(point.payload.keywords),
         severity: point.payload.severity,
         examples: this.parseExamples(point.payload.examples),
-        patterns: this.parseJSON(point.payload.patterns), // JSON 파싱
+        
+        // ✅ 신규 필드 - RegExp 객체로 변환
+        antiPatterns: this.parsePatternArray(point.payload.antiPatterns),
+        goodPatterns: this.parsePatternArray(point.payload.goodPatterns),
+        astHints: this.parseJSON(point.payload.astHints) || {},
+        
+        // 레거시 호환
+        patterns: this.parseJSON(point.payload.patterns),
+        
         message: point.payload.message,
         isActive: point.payload.isActive
       }));
@@ -430,29 +523,37 @@ export class QdrantAdapter {
 
   async searchGuidelinesByKeywords(keywords, limit = 10) {
     try {
-      // Qdrant에서는 JSON 문자열로 저장되어 있어서 텍스트 검색으로 변경
       const should = keywords.map(keyword => ({
         key: 'keywords',
         match: { text: keyword }
       }));
-
+  
       const scrollResult = await this.client.scroll(this.guidelineCollectionName, {
         filter: { should },
         limit,
         with_payload: true,
         with_vector: false
       });
-
+  
       return scrollResult.points.map(point => ({
         ruleId: point.payload.ruleId,
+        id: point.payload.ruleId,  // 하위 호환
         title: point.payload.ruleTitle,
         category: point.payload.category,
         checkType: point.payload.checkType,
         description: point.payload.description,
-        keywords: this.parseJSON(point.payload.keywords), // JSON 파싱
+        keywords: this.parseJSON(point.payload.keywords),
         severity: point.payload.severity,
         examples: this.parseExamples(point.payload.examples),
-        patterns: this.parseJSON(point.payload.patterns), // JSON 파싱
+        
+        // ✅ 신규 필드
+        antiPatterns: this.parsePatternArray(point.payload.antiPatterns),
+        goodPatterns: this.parsePatternArray(point.payload.goodPatterns),
+        astHints: this.parseJSON(point.payload.astHints) || {},
+        
+        // 레거시 호환
+        patterns: this.parseJSON(point.payload.patterns),
+        
         message: point.payload.message
       }));
     } catch (error) {
@@ -614,6 +715,50 @@ export class QdrantAdapter {
       return [];
     }
   }
+
+  /**
+ * 패턴 배열을 JSON에서 파싱하고 RegExp 객체로 변환
+ * 
+ * guidelineChecker.checkRegexRule()이 기대하는 형식:
+ * [ { regex: RegExp, description: string }, ... ]
+ * 
+ * @param {string} jsonStr - JSON 문자열
+ * @returns {Array<{regex: RegExp, description: string}>}
+ */
+parsePatternArray(jsonStr) {
+  if (!jsonStr) return [];
+  
+  try {
+    const patterns = JSON.parse(jsonStr);
+    if (!Array.isArray(patterns)) return [];
+    
+    return patterns.map(p => {
+      try {
+        // 객체 형태: { pattern: "...", flags: "g", description: "..." }
+        if (typeof p === 'object' && p.pattern) {
+          return {
+            regex: new RegExp(p.pattern, p.flags || 'g'),
+            description: p.description || ''
+          };
+        }
+        // 문자열만 있는 경우
+        if (typeof p === 'string') {
+          return {
+            regex: new RegExp(p, 'g'),
+            description: ''
+          };
+        }
+        return null;
+      } catch (e) {
+        console.warn(`패턴 RegExp 변환 실패: ${JSON.stringify(p)} - ${e.message}`);
+        return null;
+      }
+    }).filter(p => p !== null);
+  } catch (e) {
+    console.warn(`패턴 배열 JSON 파싱 실패: ${e.message}`);
+    return [];
+  }
+}
 
   async getSystemStats() {
     try {
