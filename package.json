@@ -1,0 +1,46 @@
+{
+  "name": "code-pattern-analyzer",
+  "version": "1.0.0",
+  "description": "Java code pattern analysis using Ollama and Weaviate",
+  "main": "src/main.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.js",
+    "dev": "node --watch src/main.js",
+    "test": "node src/test.js",
+    "check": "node src/main.js check",
+    "check:guidelines": "node src/main.js check-guidelines",
+    "extract": "node src/main.js extract-guidelines",
+    "patterns": "node src/main.js search-patterns",
+    "manage": "node src/main.js manage-guidelines",
+    "status": "node src/main.js status"
+  },
+  "keywords": [
+    "java",
+    "code-analysis",
+    "patterns",
+    "ollama",
+    "weaviate"
+  ],
+  "author": "Code Pattern Team",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.470.0",
+    "@qdrant/js-client-rest": "^1.15.1",
+    "axios": "^1.6.0",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.1",
+    "java-parser": "^2.0.4",
+    "jszip": "^3.10.1",
+    "pdf2json": "^3.2.2",
+    "uuid": "^9.0.1",
+    "weaviate-ts-client": "^1.5.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
