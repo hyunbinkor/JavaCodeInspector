@@ -58,7 +58,7 @@ class TagDefinitionLoader {
       // 정의 파일 경로 결정
       this.definitionPath = customPath || 
         process.env.TAG_DEFINITIONS_PATH ||
-        path.join(process.cwd(), 'config', 'tag-definitions.json');
+        path.join(process.cwd(), 'src', 'config', 'tag-definitions.json');
 
       logger.info(`📋 태그 정의 로드 중: ${this.definitionPath}`);
 

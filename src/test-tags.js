@@ -16,7 +16,7 @@ async function main() {
   console.log('=== 태그 기반 필터링 시스템 테스트 ===\n');
 
   // 1. 샘플 코드 로드
-  const samplePath = path.join(process.cwd(), 'samples', 'UserController.java');
+  const samplePath = path.join(process.cwd(), 'UserController.java');
   let sourceCode;
   
   try {
