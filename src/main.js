@@ -6,16 +6,18 @@
  * - Layer2: VectorDB 패턴 검색 (Qdrant 기반 유사 패턴 매칭)
  * - Layer3: UnifiedJavaCodeChecker (통합 리포트 생성)
  * 
- * 지원 명령어 (6개):
+ * 지원 명령어:
  * - check           : 통합 검사 (권장)
  * - check-guidelines: 가이드라인만 검사
  * - search          : 패턴 검색
  * - batch           : 이슈 배치 처리
  * - extract-guidelines: 규칙 추출
  * - import-guidelines : 규칙 VectorDB 저장
+ * - profile         : 코드 프로파일링 (태그 추출) [신규]
+ * - list-tags       : 태그 정의 목록 [신규]
  * 
  * @module main
- * @version 3.0.0
+ * @version 3.1.0
  */
 
 import { Command } from 'commander';
@@ -26,6 +28,7 @@ import { processBatchIssues } from './commands/issueCommand.js';
 import { searchPatterns } from './commands/searchCommand.js';
 import { performUnifiedCheck, performGuidelineOnlyCheck } from './commands/checkCommand.js';
 import { extractGuidelines, importGuidelines } from './commands/guidelineCommand.js';
+import { profileCode, listTags, validateTagDefinitions, testTags } from './commands/tagCommand.js';
 import logger from './utils/loggerUtils.js';
 
 // TLS 인증서 검증 비활성화 (개발 환경)
@@ -37,7 +40,7 @@ const program = new Command();
 program
   .name('unified-code-analyzer')
   .description('통합 Java 코드 품질 검사 도구 (3-Layer 아키텍처)')
-  .version('3.0.0');
+  .version('3.1.0');
 
 // ============================================================
 // 1. check - 통합 코드 품질 검사 (권장)
@@ -142,6 +145,75 @@ program
       await importGuidelines(options);
     } catch (error) {
       logger.error('가이드라인 import 실패:', error.message);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// 7. profile - 코드 프로파일링 (태그 추출) [신규]
+// ============================================================
+program
+  .command('profile')
+  .description('Java 코드의 태그 프로파일 생성')
+  .requiredOption('-c, --code <file>', '프로파일링할 Java 파일')
+  .option('-o, --output <file>', '결과 저장 파일 (JSON)')
+  .option('-v, --verbose', '상세 출력')
+  .option('--no-llm', 'LLM 기반 태깅 비활성화 (Tier 1만)')
+  .action(async (options) => {
+    try {
+      await profileCode(options);
+    } catch (error) {
+      logger.error('프로파일링 실패:', error.message);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// 8. list-tags - 태그 정의 목록 [신규]
+// ============================================================
+program
+  .command('list-tags')
+  .description('정의된 태그 목록 조회')
+  .option('-c, --category <name>', '특정 카테고리만 표시')
+  .option('-t, --tier <number>', '특정 티어만 표시 (1 또는 2)')
+  .action(async (options) => {
+    try {
+      await listTags(options);
+    } catch (error) {
+      logger.error('태그 목록 조회 실패:', error.message);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// 9. validate-tags - 태그 정의 유효성 검사 [신규]
+// ============================================================
+program
+  .command('validate-tags')
+  .description('태그 정의 파일 유효성 검사')
+  .option('-i, --input <file>', '검사할 태그 정의 파일')
+  .action(async (options) => {
+    try {
+      await validateTagDefinitions(options);
+    } catch (error) {
+      logger.error('태그 유효성 검사 실패:', error.message);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// 10. test-tags - 특정 태그 테스트 [신규]
+// ============================================================
+program
+  .command('test-tags')
+  .description('특정 코드에 대해 특정 태그 테스트')
+  .requiredOption('-c, --code <file>', 'Java 파일')
+  .requiredOption('-t, --tags <tags>', '테스트할 태그 (쉼표 구분)')
+  .action(async (options) => {
+    try {
+      await testTags(options);
+    } catch (error) {
+      logger.error('태그 테스트 실패:', error.message);
       process.exit(1);
     }
   });
