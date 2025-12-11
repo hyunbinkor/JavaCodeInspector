@@ -685,19 +685,4 @@ ${badExamples.length > 0 ? badExamples.map(ex => `- ${ex}`).join('\n') : '- (없
 
     return truncated;
   }
-
-  // ═══════════════════════════════════════════════════════════════════
-  // 하위 호환성
-  // ═══════════════════════════════════════════════════════════════════
-
-  /**
-   * rules getter (하위 호환성)
-   * 모든 규칙 (정적 + 컨텍스트) 반환
-   */
-  get rules() {
-    const allRules = new Map();
-    for (const [k, v] of this.staticRules) allRules.set(k, v);
-    for (const [k, v] of this.contextualRules) allRules.set(k, v);
-    return allRules;
-  }
 }

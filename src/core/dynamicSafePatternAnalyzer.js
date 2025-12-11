@@ -73,7 +73,6 @@ import logger from '../utils/loggerUtils.js';
  * 1. new DynamicSafePatternAnalyzer()
  * 2. await initialize() - VectorDB 패턴 로드 및 분류
  * 3. checkForSafePracticesDynamic() / findIssuesUsingDynamicPatterns() - 반복 호출
- * 4. (필요 시) refreshPatternCache() - 패턴 갱신
  * 
  * @class
  */
