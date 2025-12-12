@@ -32,12 +32,16 @@ export async function extractGuidelines(options) {
   const extractor = new GuidelineExtractor();
   await extractor.initialize();
 
-  const guidelines = await extractor.extractFromFile(options.input);
+  const documentPath = path.resolve('document', 'development_guide', options.input);
+  const guidelines = await extractor.extractFromFile(documentPath);
   logger.info(`추출 완료: ${guidelines.length}개 규칙`);
 
   // 통계
   const stats = {};
-  guidelines.forEach(g => {
+  guidelines.contextRules.forEach(g => {
+    stats[g.category] = (stats[g.category] || 0) + 1;
+  });
+  guidelines.guidelines.forEach(g => {
     stats[g.category] = (stats[g.category] || 0) + 1;
   });
   
