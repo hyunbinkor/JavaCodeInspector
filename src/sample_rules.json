@@ -1,0 +1,102 @@
+{
+  "source": "개발가이드_샘플.docx",
+  "extractedAt": "2025-01-01T00:00:00Z",
+  "guidelines": [
+    {
+      "ruleId": "RES-001",
+      "title": "JDBC 리소스 누수 방지",
+      "description": "Connection, Statement, ResultSet은 사용 후 반드시 close()를 호출하거나 try-with-resources를 사용해야 합니다.",
+      "severity": "CRITICAL",
+      "category": "resource_management",
+      "keywords": ["Connection", "Statement", "ResultSet", "close", "try-with-resources"],
+      "examples": {
+        "bad": ["Connection conn = dataSource.getConnection();\nStatement stmt = conn.createStatement();\n// close 없음"],
+        "good": ["try (Connection conn = dataSource.getConnection()) {\n  // 자동 close\n}"]
+      }
+    },
+    {
+      "ruleId": "SEC-001",
+      "title": "SQL Injection 방지",
+      "description": "SQL 쿼리 작성 시 문자열 연결 대신 PreparedStatement와 파라미터 바인딩을 사용해야 합니다.",
+      "severity": "CRITICAL",
+      "category": "security",
+      "keywords": ["SQL", "PreparedStatement", "문자열 연결", "파라미터 바인딩"],
+      "examples": {
+        "bad": ["String sql = \"SELECT * FROM users WHERE id = '\" + userId + \"'\";"],
+        "good": ["PreparedStatement pstmt = conn.prepareStatement(\"SELECT * FROM users WHERE id = ?\");\npstmt.setString(1, userId);"]
+      }
+    },
+    {
+      "ruleId": "SEC-002",
+      "title": "비밀번호 하드코딩 금지",
+      "description": "소스코드에 비밀번호, API 키 등 민감 정보를 직접 입력하지 않습니다.",
+      "severity": "CRITICAL",
+      "category": "security",
+      "keywords": ["password", "secret", "api_key", "하드코딩"]
+    },
+    {
+      "ruleId": "ARCH-001",
+      "title": "Controller에서 DAO 직접 호출 금지",
+      "description": "Controller는 Service 계층을 통해서만 데이터에 접근해야 합니다. Controller에서 Repository나 DAO를 직접 호출하면 안 됩니다.",
+      "severity": "HIGH",
+      "category": "architecture",
+      "keywords": ["Controller", "Service", "Repository", "DAO", "계층"]
+    },
+    {
+      "ruleId": "ERR-001",
+      "title": "빈 catch 블록 금지",
+      "description": "catch 블록에서 예외를 무시하지 말고, 최소한 로깅을 수행하거나 예외를 다시 발생시켜야 합니다.",
+      "severity": "MEDIUM",
+      "category": "exception_handling",
+      "keywords": ["catch", "Exception", "로깅", "빈 블록"],
+      "examples": {
+        "bad": ["try { ... } catch (Exception e) { }"],
+        "good": ["try { ... } catch (Exception e) { logger.error(\"Error\", e); throw e; }"]
+      }
+    },
+    {
+      "ruleId": "ERR-002",
+      "title": "포괄적 예외 처리 지양",
+      "description": "catch(Exception e)보다 구체적인 예외 타입을 catch해야 합니다.",
+      "severity": "MEDIUM",
+      "category": "exception_handling",
+      "keywords": ["Exception", "catch", "구체적 예외"]
+    },
+    {
+      "ruleId": "PERF-001",
+      "title": "루프 내 DB 호출 금지 (N+1 문제)",
+      "description": "for/while 루프 안에서 DB 쿼리를 실행하면 N+1 문제가 발생합니다. 배치 조회나 JOIN을 사용하세요.",
+      "severity": "HIGH",
+      "category": "performance",
+      "keywords": ["루프", "DB", "N+1", "배치", "JOIN"],
+      "examples": {
+        "bad": ["for (User user : users) {\n  List<Order> orders = orderDao.findByUserId(user.getId());\n}"],
+        "good": ["List<Order> allOrders = orderDao.findByUserIds(userIds);"]
+      }
+    },
+    {
+      "ruleId": "PERF-002",
+      "title": "불필요한 객체 생성 지양",
+      "description": "루프 안에서 불필요한 객체를 반복 생성하지 마세요.",
+      "severity": "LOW",
+      "category": "performance",
+      "keywords": ["new", "루프", "객체 생성"]
+    },
+    {
+      "ruleId": "LOG-001",
+      "title": "예외 발생 시 로깅 필수",
+      "description": "예외가 발생하면 반드시 로그를 남겨야 합니다.",
+      "severity": "MEDIUM",
+      "category": "exception_handling",
+      "keywords": ["Exception", "로깅", "logger", "log"]
+    },
+    {
+      "ruleId": "TX-001",
+      "title": "@Transactional은 Service에서만 사용",
+      "description": "@Transactional 어노테이션은 Service 계층에서만 사용해야 합니다.",
+      "severity": "HIGH",
+      "category": "architecture",
+      "keywords": ["Transactional", "Service", "트랜잭션"]
+    }
+  ]
+}

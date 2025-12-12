@@ -29,6 +29,12 @@ import { searchPatterns } from './commands/searchCommand.js';
 import { performUnifiedCheck, performGuidelineOnlyCheck } from './commands/checkCommand.js';
 import { extractGuidelines, importGuidelines } from './commands/guidelineCommand.js';
 import { profileCode, listTags, validateTagDefinitions, testTags } from './commands/tagCommand.js';
+import { 
+  analyzeRules, 
+  generateTagConditions, 
+  applyTagConditions,
+  checkTagConditionStatus 
+} from './commands/analyzeCommand.js';
 import logger from './utils/loggerUtils.js';
 
 // TLS 인증서 검증 비활성화 (개발 환경)
@@ -49,6 +55,7 @@ program
   .command('check')
   .description('통합 Java 코드 품질 검사 (Layer1 + Layer2 + Layer3)')
   .requiredOption('-c, --code <file>', '검사할 Java 코드 파일')
+  .option('-r, --rules <file>', '규칙 JSON 파일 (기본: 내장 규칙)')
   .option('-o, --output <file>', '분석 결과 저장 파일 (JSON)')
   .option('--fix', '수정안 자동 생성')
   .option('-l, --limit <number>', '패턴 검색 결과 수', '10')
@@ -214,6 +221,77 @@ program
       await testTags(options);
     } catch (error) {
       logger.error('태그 테스트 실패:', error.message);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// 11. analyze-rules - 규칙 분석 (필요 태그 추출) [Step 6]
+// ============================================================
+program
+  .command('analyze-rules')
+  .description('규칙 파일을 분석하여 필요한 태그 목록 추출')
+  .requiredOption('-i, --input <file>', '규칙 JSON 파일')
+  .option('-o, --output <file>', '분석 결과 저장 파일')
+  .option('--llm', 'LLM 기반 정밀 분석 사용')
+  .action(async (options) => {
+    try {
+      await analyzeRules(options);
+    } catch (error) {
+      logger.error('규칙 분석 실패:', error.message);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// 12. generate-conditions - tagCondition 자동 생성 [Step 6]
+// ============================================================
+program
+  .command('generate-conditions')
+  .description('분석 결과를 기반으로 tagCondition 표현식 생성')
+  .requiredOption('-i, --input <file>', '분석 결과 또는 규칙 JSON')
+  .option('-o, --output <file>', '결과 저장 파일')
+  .option('--llm', 'LLM 기반 표현식 생성')
+  .option('--apply', '원본 규칙에 직접 적용')
+  .action(async (options) => {
+    try {
+      await generateTagConditions(options);
+    } catch (error) {
+      logger.error('tagCondition 생성 실패:', error.message);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// 13. apply-tags - tagCondition 일괄 적용 [Step 6]
+// ============================================================
+program
+  .command('apply-tags')
+  .description('규칙 파일에 tagCondition 자동 분석 및 적용 (통합)')
+  .requiredOption('-i, --input <file>', '규칙 JSON 파일')
+  .option('-o, --output <file>', '출력 파일 (기본: _tagged.json 접미사)')
+  .option('--llm', 'LLM 사용 (더 정확하지만 느림)')
+  .action(async (options) => {
+    try {
+      await applyTagConditions(options);
+    } catch (error) {
+      logger.error('tagCondition 적용 실패:', error.message);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// 14. check-tags-status - tagCondition 현황 확인 [Step 6]
+// ============================================================
+program
+  .command('check-tags-status')
+  .description('규칙 파일의 tagCondition 적용 현황 확인')
+  .requiredOption('-i, --input <file>', '규칙 JSON 파일')
+  .action(async (options) => {
+    try {
+      await checkTagConditionStatus(options);
+    } catch (error) {
+      logger.error('현황 확인 실패:', error.message);
       process.exit(1);
     }
   });
