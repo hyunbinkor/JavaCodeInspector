@@ -33,7 +33,7 @@ export async function extractGuidelines(options) {
   await extractor.initialize();
 
   const documentPath = path.resolve('document', 'development_guide', options.input);
-  const guidelines = await extractor.extractFromFile(documentPath);
+  const guidelines = await extractor.extractFromDocument(documentPath);
   logger.info(`추출 완료: ${guidelines.length}개 규칙`);
 
   // 통계

@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { TagRequirementAnalyzer } from '../analyzer/TagRequirementAnalyzer.js';
 import { RuleTagMapper } from '../analyzer/RuleTagMapper.js';
+import { LLMClient } from '../clients/llmClient.js';
 import { loadData, saveJsonData } from '../utils/fileUtils.js';
 import logger from '../utils/loggerUtils.js';
 
@@ -165,6 +166,28 @@ export async function applyTagConditions(options) {
   logger.info('=== tagCondition 일괄 적용 ===');
   logger.info(`입력: ${options.input}`);
 
+  // LLM 옵션 설정
+  const useLLM = options.llm || false;
+  const llmFallback = options.llmFallback || false;
+  let llmClient = null;
+  
+  // LLM 필요 시 클라이언트 초기화
+  if (useLLM || llmFallback) {
+    llmClient = new LLMClient();
+    const connected = await llmClient.checkConnection();
+    
+    if (connected) {
+      if (useLLM) {
+        logger.info('🤖 LLM 모드: 모든 규칙에 LLM 적용');
+      } else if (llmFallback) {
+        logger.info('🤖 LLM 폴백 모드: 매칭 실패 시에만 LLM 자동 사용');
+      }
+    } else {
+      logger.warn('⚠️ LLM 서버 연결 실패 - LLM 없이 진행합니다.');
+      llmClient = null;
+    }
+  }
+
   // 1. 규칙 로드
   const inputData = await loadJsonFile(options.input);
   const rules = Array.isArray(inputData) ? inputData : (inputData.guidelines || []);
@@ -185,14 +208,15 @@ export async function applyTagConditions(options) {
   const analyzer = new TagRequirementAnalyzer();
   await analyzer.initialize();
   const analysisResults = await analyzer.analyzeRules(withoutCondition, {
-    useLLM: options.llm || false
+    useLLM: useLLM && !!llmClient
   });
 
   // 3. 매핑
   const mapper = new RuleTagMapper();
-  await mapper.initialize();
+  await mapper.initialize({ llmClient });
   const mappings = await mapper.generateTagConditions(analysisResults, {
-    useLLM: options.llm || false
+    useLLM: useLLM && !!llmClient,
+    llmFallback: llmFallback && !!llmClient
   });
 
   // 4. 적용
@@ -225,10 +249,33 @@ export async function applyTagConditions(options) {
 
   // 6. 결과 요약
   const applied = updatedRules.filter(r => r.tagCondition).length;
+  const strategies = {};
+  
+  // mappings가 유효한 배열인지 확인
+  if (Array.isArray(mappings)) {
+    for (const m of mappings) {
+      if (m && m.strategy) {
+        strategies[m.strategy] = (strategies[m.strategy] || 0) + 1;
+      }
+    }
+  }
+  
   console.log('\n=== 적용 결과 ===');
   console.log(`적용 전: ${withCondition.length}개`);
   console.log(`적용 후: ${applied}개`);
   console.log(`신규 적용: ${applied - withCondition.length}개`);
+  
+  console.log('\n=== 전략별 통계 ===');
+  const strategyEntries = Object.entries(strategies);
+  if (strategyEntries.length > 0) {
+    strategyEntries.forEach(([strategy, count]) => {
+      const emoji = strategy === 'fallback' ? '⚠️' : 
+                    strategy.includes('llm') ? '🤖' : '✅';
+      console.log(`  ${emoji} ${strategy}: ${count}개`);
+    });
+  } else {
+    console.log('  (통계 없음)');
+  }
 
   logger.info(`\n✅ 저장 완료: ${outputPath}`);
 }

@@ -42,13 +42,30 @@ export class RuleTagMapper {
     this.initialized = false;
 
     /** @type {Map<string, string>} 카테고리별 기본 복합 태그 */
-    this.categoryDefaultTags = new Map([
-      ['resource_management', 'RESOURCE_LEAK_RISK'],
-      ['security', 'SQL_INJECTION_RISK'],
-      ['security_vulnerability', 'SQL_INJECTION_RISK'],
-      ['exception_handling', 'POOR_ERROR_HANDLING'],
-      ['performance', 'N_PLUS_ONE_RISK']
-    ]);
+    this.categoryDefaultTags = new Map();
+    // 안전한 방식으로 Map 초기화
+    this.categoryDefaultTags.set('resource_management', 'RESOURCE_LEAK_RISK');
+    this.categoryDefaultTags.set('security', 'SQL_INJECTION_RISK');
+    this.categoryDefaultTags.set('security_vulnerability', 'SQL_INJECTION_RISK');
+    this.categoryDefaultTags.set('exception_handling', 'POOR_ERROR_HANDLING');
+    this.categoryDefaultTags.set('performance', 'N_PLUS_ONE_RISK');
+    this.categoryDefaultTags.set('error_handling', 'POOR_ERROR_HANDLING');
+    this.categoryDefaultTags.set('logging', 'POOR_ERROR_HANDLING');
+    this.categoryDefaultTags.set('transaction', 'HAS_TRANSACTIONAL');
+    this.categoryDefaultTags.set('database', 'RESOURCE_LEAK_RISK');
+    this.categoryDefaultTags.set('sql', 'SQL_INJECTION_RISK');
+    this.categoryDefaultTags.set('architecture', 'IS_CONTROLLER');
+    this.categoryDefaultTags.set('api', 'IS_CONTROLLER');
+    this.categoryDefaultTags.set('performance_issue', 'N_PLUS_ONE_RISK');
+    
+    // contextType 매핑 추가
+    this.categoryDefaultTags.set('overview', 'CONTEXT_DOCUMENT');  // 문서 개요
+    this.categoryDefaultTags.set('scope', 'CONTEXT_DOCUMENT');  // 적용 범위
+    this.categoryDefaultTags.set('terminology', 'CONTEXT_DOCUMENT');  // 용어 정의
+    this.categoryDefaultTags.set('consensus', 'CONTEXT_DOCUMENT');  // 합의 사항
+    this.categoryDefaultTags.set('guideline', 'CONTEXT_DOCUMENT');  // 가이드라인
+    this.categoryDefaultTags.set('rule', 'CONTEXT_DOCUMENT');  // 규칙
+    this.categoryDefaultTags.set('context', 'CONTEXT_DOCUMENT');  // 컨텍스트
 
     /** @type {Map<string, string>} 태그 조합 → 복합 태그 역매핑 */
     this.compoundTagReverseMap = new Map();
@@ -86,9 +103,29 @@ export class RuleTagMapper {
    * 예: "USES_CONNECTION && !HAS_TRY_WITH_RESOURCES" → "RESOURCE_LEAK_RISK"
    */
   buildCompoundTagReverseMap() {
-    const compoundTags = this.tagLoader.getCompoundTags();
+    const compoundTags = this.tagLoader ? this.tagLoader.getCompoundTags() : null;
     
-    for (const [name, def] of Object.entries(compoundTags)) {
+    // null/undefined 방어
+    if (!compoundTags || typeof compoundTags !== 'object') {
+      logger.warn('⚠️ 복합 태그 정의가 없습니다.');
+      return;
+    }
+    
+    // Object.entries 안전하게 호출
+    let entries;
+    try {
+      entries = Object.entries(compoundTags);
+    } catch (e) {
+      logger.warn(`⚠️ 복합 태그 순회 실패: ${e.message}`);
+      return;
+    }
+    
+    for (const entry of entries) {
+      if (!entry || !Array.isArray(entry) || entry.length < 2) continue;
+      
+      const [name, def] = entry;
+      if (!def || !def.expression) continue;
+      
       // 표현식의 정규화된 형태를 키로 사용
       const normalizedExpr = this.normalizeExpression(def.expression);
       this.compoundTagReverseMap.set(normalizedExpr, name);
@@ -112,34 +149,39 @@ export class RuleTagMapper {
    * 
    * @param {Object} analysisResult - TagRequirementAnalyzer의 분석 결과
    * @param {Object} options - 옵션
+   * @param {boolean} options.useLLM - 모든 규칙에 LLM 사용
+   * @param {boolean} options.llmFallback - 폴백 시에만 LLM 자동 사용
+   * @param {boolean} options.preferCompound - 복합 태그 우선
    * @returns {Promise<MappingResult>}
    */
   async generateTagCondition(analysisResult, options = {}) {
-    const { useLLM = false, preferCompound = true } = options;
+    const { useLLM = false, llmFallback = false, preferCompound = true } = options;
 
     logger.info(`  🔗 tagCondition 생성: ${analysisResult.ruleId}`);
 
-    // Step 1: 복합 태그 우선 전략
+    // Step 0: 단일 태그면 바로 사용
+    if (analysisResult.requiredTags.length === 1) {
+      const singleTag = analysisResult.requiredTags[0];
+      if (this.isValidTag(singleTag)) {
+        return this.createResult(analysisResult, singleTag, 'single_tag');
+      }
+    }
+
+    // Step 1: 복합 태그 매칭 (필수 태그 기반)
     if (preferCompound) {
-      const compoundMatch = this.findMatchingCompoundTag(analysisResult);
+      const compoundMatch = this.findBestCompoundTag(analysisResult);
       if (compoundMatch) {
         return this.createResult(analysisResult, compoundMatch, 'compound_tag');
       }
     }
 
-    // Step 2: 카테고리 기본 태그 전략
-    const categoryDefault = this.getCategoryDefaultTag(analysisResult.category);
-    if (categoryDefault && this.isTagRelevant(categoryDefault, analysisResult)) {
-      return this.createResult(analysisResult, categoryDefault, 'category_default');
-    }
-
-    // Step 3: 규칙 기반 조합 전략
+    // Step 2: 규칙 기반 조합 전략
     const ruleBasedExpr = this.buildExpressionRuleBased(analysisResult);
     if (ruleBasedExpr) {
       return this.createResult(analysisResult, ruleBasedExpr, 'rule_based');
     }
 
-    // Step 4: LLM 기반 조합 전략 (선택적)
+    // Step 3: LLM 기반 조합 전략 (명시적 사용)
     if (useLLM && this.llmClient) {
       const llmExpr = await this.buildExpressionLLMBased(analysisResult);
       if (llmExpr) {
@@ -147,73 +189,100 @@ export class RuleTagMapper {
       }
     }
 
-    // Step 5: 단순 조합 (폴백)
+    // Step 4: 폴백 전 LLM 자동 시도 (llmFallback 옵션)
+    if (llmFallback && this.llmClient) {
+      logger.info(`  🤖 폴백 상황 - LLM 자동 시도: ${analysisResult.ruleId}`);
+      const llmExpr = await this.buildExpressionLLMBased(analysisResult);
+      if (llmExpr) {
+        return this.createResult(analysisResult, llmExpr, 'llm_fallback');
+      }
+    }
+
+    // Step 5: 단순 조합 (최종 폴백)
     const fallbackExpr = this.buildSimpleExpression(analysisResult);
     return this.createResult(analysisResult, fallbackExpr, 'fallback');
   }
 
   /**
-   * 매칭되는 복합 태그 찾기
+   * 유효한 태그인지 확인
+   */
+  isValidTag(tagName) {
+    return this.tagLoader.getTagDefinition(tagName) !== null ||
+           this.tagLoader.getCompoundTag(tagName) !== null;
+  }
+
+  /**
+   * 가장 적합한 복합 태그 찾기 (개선된 버전)
    * 
    * @param {Object} analysisResult - 분석 결과
    * @returns {string|null} 매칭된 복합 태그명 또는 null
    */
-  findMatchingCompoundTag(analysisResult) {
+  findBestCompoundTag(analysisResult) {
+    if (!analysisResult || !analysisResult.requiredTags) {
+      return null;
+    }
+    
     const requiredTags = new Set(analysisResult.requiredTags);
-    const compoundTags = this.tagLoader.getCompoundTags();
+    const compoundTags = this.tagLoader ? this.tagLoader.getCompoundTags() : null;
     const category = analysisResult.category;
 
-    // 1. 필수 태그에 이미 복합 태그가 포함되어 있는지 확인
+    // null/undefined 방어
+    if (!compoundTags || typeof compoundTags !== 'object') {
+      return null;
+    }
+
+    // Object.entries 안전하게 호출
+    let entries;
+    try {
+      entries = Object.entries(compoundTags);
+    } catch (e) {
+      return null;
+    }
+
+    // 1. 필수 태그에 이미 복합 태그가 포함되어 있으면 바로 반환
     for (const tagName of requiredTags) {
       if (compoundTags[tagName]) {
         return tagName;
       }
     }
 
-    // 2. 카테고리에 맞는 복합 태그 우선 선택
-    const categoryCompoundMap = {
-      'resource_management': 'RESOURCE_LEAK_RISK',
-      'security': 'SQL_INJECTION_RISK',
-      'security_vulnerability': 'SQL_INJECTION_RISK',
-      'exception_handling': 'POOR_ERROR_HANDLING',
-      'performance': 'N_PLUS_ONE_RISK'
-    };
-
-    const preferredCompound = categoryCompoundMap[category];
-    if (preferredCompound && compoundTags[preferredCompound]) {
-      // 카테고리 기반 복합 태그의 의존 태그가 하나라도 있으면 사용
-      const compoundDeps = this.extractTagsFromExpression(compoundTags[preferredCompound].expression);
-      const hasRelevantTag = compoundDeps.some(dep => 
-        requiredTags.has(dep) || requiredTags.has(dep.replace(/^!/, ''))
-      );
-      if (hasRelevantTag) {
-        return preferredCompound;
-      }
-    }
-
-    // 3. 필수 태그와 가장 많이 겹치는 복합 태그 찾기
+    // 2. 필수 태그와 가장 관련성 높은 복합 태그 찾기 (카테고리 무관)
     let bestMatch = null;
     let bestScore = 0;
 
-    for (const [name, def] of Object.entries(compoundTags)) {
+    for (const entry of entries) {
+      if (!entry || !Array.isArray(entry) || entry.length < 2) continue;
+      
+      const [name, def] = entry;
+      if (!def || !def.expression) continue;
+      
       const compoundDeps = this.extractTagsFromExpression(def.expression);
       
-      // 매칭 점수 계산: 겹치는 태그 수 / 복합 태그 의존 태그 수
-      const matchingTags = compoundDeps.filter(dep => 
-        requiredTags.has(dep) || requiredTags.has(dep.replace(/^!/, ''))
-      );
+      // 점수 계산: 필수 태그와의 교집합
+      const matchingTags = compoundDeps.filter(dep => {
+        const cleanDep = dep.replace(/^!/, '');
+        return requiredTags.has(cleanDep);
+      });
       
-      if (matchingTags.length > 0) {
-        const score = matchingTags.length / compoundDeps.length;
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = name;
-        }
+      if (matchingTags.length === 0) continue;
+
+      // 기본 점수: 매칭률
+      let score = matchingTags.length / compoundDeps.length;
+      
+      // 카테고리 일치 보너스
+      const compoundCategory = this.getCompoundTagCategory(name);
+      if (compoundCategory === category) {
+        score += 0.2;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = name;
       }
     }
 
-    // 50% 이상 매칭되어야 사용
-    return bestScore >= 0.5 ? bestMatch : null;
+    // 40% 이상 매칭되어야 복합 태그 사용
+    return bestScore >= 0.4 ? bestMatch : null;
   }
 
   /**
@@ -433,12 +502,23 @@ tagCondition:`;
    * 단순 표현식 생성 (폴백)
    */
   buildSimpleExpression(analysisResult) {
-    const { requiredTags } = analysisResult;
+    const { requiredTags, category, ruleId } = analysisResult;
 
     if (requiredTags.length === 0) {
       // 태그가 없으면 카테고리 기반 기본값
-      const defaultTag = this.getCategoryDefaultTag(analysisResult.category);
-      return defaultTag || 'UNKNOWN_CONDITION';
+      const normalizedCategory = (category || '').toLowerCase().replace(/[- ]/g, '_');
+      const defaultTag = this.getCategoryDefaultTag(normalizedCategory);
+      
+      if (defaultTag) {
+        return defaultTag;
+      }
+      
+      // 정말 아무것도 없으면 경고 로그 출력
+      logger.warn(`  ⚠️ ${ruleId}: 태그를 찾을 수 없음 (category: ${category})`);
+      logger.warn(`     → 규칙을 수동으로 검토하거나 --llm 옵션을 사용하세요.`);
+      
+      // MANUAL_REVIEW 태그 반환 - 수동 검토 필요함을 표시
+      return 'MANUAL_REVIEW_REQUIRED';
     }
 
     if (requiredTags.length === 1) {
@@ -495,14 +575,44 @@ tagCondition:`;
   async generateTagConditions(analysisResults, options = {}) {
     const results = [];
 
-    logger.info(`🔗 ${analysisResults.length}개 규칙 tagCondition 생성 중...`);
-
-    for (const result of analysisResults) {
-      const mapping = await this.generateTagCondition(result, options);
-      results.push(mapping);
+    // null/undefined 방어 + 디버그 로그
+    if (!analysisResults) {
+      logger.warn('⚠️ analysisResults가 null/undefined입니다.');
+      return results;
+    }
+    
+    if (!Array.isArray(analysisResults)) {
+      logger.warn(`⚠️ analysisResults가 배열이 아닙니다. 타입: ${typeof analysisResults}`);
+      return results;
     }
 
-    logger.info(`✅ 매핑 완료: ${results.filter(r => r.validated).length}/${results.length}개 유효`);
+    logger.info(`🔗 ${analysisResults.length}개 규칙 tagCondition 생성 중...`);
+
+    for (let i = 0; i < analysisResults.length; i++) {
+      let currentResult = null;
+      let currentRuleId = `index-${i}`;
+      
+      try {
+        currentResult = analysisResults[i];
+        
+        // 개별 결과 null 체크
+        if (!currentResult) {
+          logger.warn(`⚠️ 분석 결과 항목[${i}]이 null/undefined입니다.`);
+          continue;
+        }
+        
+        currentRuleId = currentResult.ruleId || currentResult.title || `index-${i}`;
+        
+        const mapping = await this.generateTagCondition(currentResult, options);
+        if (mapping) {
+          results.push(mapping);
+        }
+      } catch (error) {
+        logger.warn(`⚠️ tagCondition 생성 실패 [${currentRuleId}]: ${error.message}`);
+      }
+    }
+
+    logger.info(`✅ 매핑 완료: ${results.filter(r => r && r.validated).length}/${results.length}개 유효`);
 
     return results;
   }
@@ -515,9 +625,21 @@ tagCondition:`;
    * @returns {Object[]} tagCondition이 추가된 규칙 배열
    */
   applyMappingsToRules(rules, mappings) {
-    const mappingMap = new Map(mappings.map(m => [m.ruleId, m]));
+    // null/undefined 방어
+    if (!Array.isArray(rules)) return [];
+    if (!Array.isArray(mappings)) return rules;
+    
+    // null 항목 필터링 후 Map 생성 (안전한 방식)
+    const mappingMap = new Map();
+    for (const m of mappings) {
+      if (m && m.ruleId) {
+        mappingMap.set(m.ruleId, m);
+      }
+    }
 
     return rules.map(rule => {
+      if (!rule) return rule;
+      
       const ruleId = rule.ruleId || rule.id;
       const mapping = mappingMap.get(ruleId);
 
@@ -541,15 +663,27 @@ tagCondition:`;
    * 매핑 결과 요약 출력
    */
   summarizeMappings(mappings) {
+    // null/undefined 방어
+    if (!Array.isArray(mappings)) {
+      console.log('\n=== 매핑 결과 요약 ===');
+      console.log('매핑 결과가 없습니다.');
+      return { total: 0, validated: 0, invalid: 0, byStrategy: {} };
+    }
+    
+    // null 항목 필터링
+    const validMappings = mappings.filter(m => m);
+    
     const summary = {
-      total: mappings.length,
-      validated: mappings.filter(m => m.validated).length,
-      invalid: mappings.filter(m => !m.validated).length,
+      total: validMappings.length,
+      validated: validMappings.filter(m => m.validated).length,
+      invalid: validMappings.filter(m => !m.validated).length,
       byStrategy: {}
     };
 
-    for (const m of mappings) {
-      summary.byStrategy[m.strategy] = (summary.byStrategy[m.strategy] || 0) + 1;
+    for (const m of validMappings) {
+      if (m && m.strategy) {
+        summary.byStrategy[m.strategy] = (summary.byStrategy[m.strategy] || 0) + 1;
+      }
     }
 
     console.log('\n=== 매핑 결과 요약 ===');
@@ -557,8 +691,14 @@ tagCondition:`;
     console.log(`유효: ${summary.validated}개`);
     console.log(`무효: ${summary.invalid}개`);
     console.log('\n전략별:');
-    for (const [strategy, count] of Object.entries(summary.byStrategy)) {
-      console.log(`  - ${strategy}: ${count}개`);
+    
+    const strategyEntries = Object.entries(summary.byStrategy);
+    if (strategyEntries.length > 0) {
+      for (const [strategy, count] of strategyEntries) {
+        console.log(`  - ${strategy}: ${count}개`);
+      }
+    } else {
+      console.log('  (없음)');
     }
 
     return summary;

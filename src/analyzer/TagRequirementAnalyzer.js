@@ -136,7 +136,100 @@ export class TagRequirementAnalyzer {
       'logging': ['HAS_LOGGING'],
       'logger': ['HAS_LOGGING'],
       '로깅': ['HAS_LOGGING'],
-      '로그': ['HAS_LOGGING']
+      '로그': ['HAS_LOGGING'],
+      
+      // 추가 일반 키워드
+      'null': ['HAS_NULL_CHECK'],
+      'nullpointer': ['HAS_NULL_CHECK'],
+      'nullable': ['HAS_NULL_CHECK'],
+      '널 체크': ['HAS_NULL_CHECK'],
+      
+      // 일반적인 코드 품질 키워드
+      '검증': ['HAS_VALIDATION'],
+      'validate': ['HAS_VALIDATION'],
+      'validation': ['HAS_VALIDATION'],
+      
+      // 인터페이스/추상화 관련
+      'interface': ['IS_SERVICE'],
+      'abstract': ['IS_SERVICE'],
+      '추상': ['IS_SERVICE'],
+      
+      // Spring 어노테이션
+      '@autowired': ['HAS_AUTOWIRED'],
+      'autowired': ['HAS_AUTOWIRED'],
+      '@requestmapping': ['HAS_REQUEST_MAPPING'],
+      'requestmapping': ['HAS_REQUEST_MAPPING'],
+      
+      // 데이터베이스 관련
+      'jdbc': ['USES_CONNECTION'],
+      'datasource': ['USES_CONNECTION'],
+      'query': ['HAS_SQL_CONCATENATION'],
+      'select': ['HAS_SQL_CONCATENATION'],
+      'insert': ['HAS_SQL_CONCATENATION'],
+      'update': ['HAS_SQL_CONCATENATION'],
+      'delete': ['HAS_SQL_CONCATENATION'],
+      
+      // 보안 추가
+      '암호화': ['HAS_HARDCODED_PASSWORD'],
+      'encrypt': ['HAS_HARDCODED_PASSWORD'],
+      'credential': ['HAS_HARDCODED_PASSWORD'],
+      '인증': ['HAS_HARDCODED_PASSWORD'],
+      
+      // ===== 추가 한글 키워드 (가이드 문서용) =====
+      
+      // 아키텍처/레이어 관련 한글
+      '컨트롤러': ['IS_CONTROLLER'],
+      '서비스': ['IS_SERVICE'],
+      '레포지토리': ['IS_REPOSITORY'],
+      '서비스레이어': ['IS_SERVICE'],
+      '비즈니스로직': ['IS_SERVICE'],
+      '데이터접근': ['IS_DAO', 'IS_REPOSITORY'],
+      
+      // 데이터/DB 관련 한글
+      '데이터': ['USES_CONNECTION'],
+      '데이터베이스': ['USES_CONNECTION'],
+      '디비': ['USES_CONNECTION'],
+      'db': ['USES_CONNECTION'],
+      '쿼리': ['HAS_SQL_CONCATENATION'],
+      'sql': ['HAS_SQL_CONCATENATION'],
+      '테이블': ['USES_CONNECTION'],
+      
+      // 트랜잭션 관련 한글
+      '트랜잭션': ['HAS_TRANSACTIONAL'],
+      '트렌젝션': ['HAS_TRANSACTIONAL'],
+      'transaction': ['HAS_TRANSACTIONAL'],
+      '커밋': ['HAS_TRANSACTIONAL'],
+      '롤백': ['HAS_TRANSACTIONAL'],
+      
+      // API/통신 관련
+      'api': ['IS_CONTROLLER', 'HAS_REQUEST_MAPPING'],
+      'rest': ['IS_CONTROLLER'],
+      'http': ['IS_CONTROLLER'],
+      '요청': ['IS_CONTROLLER'],
+      '응답': ['IS_CONTROLLER'],
+      
+      // 프레임워크 관련
+      'framework': ['IS_SERVICE'],
+      '프레임워크': ['IS_SERVICE'],
+      'spring': ['IS_SERVICE'],
+      '스프링': ['IS_SERVICE'],
+      
+      // Context/세션 관련
+      'context': ['IS_SERVICE'],
+      '컨텍스트': ['IS_SERVICE'],
+      'session': ['IS_SERVICE'],
+      '세션': ['IS_SERVICE'],
+      
+      // 메모리/자원 관련 한글
+      '메모리': ['USES_STREAM'],
+      '자원': ['USES_CONNECTION', 'USES_STREAM'],
+      '리소스': ['USES_CONNECTION', 'USES_STREAM'],
+      
+      // 에러/오류 관련 한글
+      '에러': ['HAS_EMPTY_CATCH', 'HAS_GENERIC_CATCH'],
+      '오류': ['HAS_EMPTY_CATCH', 'HAS_GENERIC_CATCH'],
+      '에러처리': ['HAS_EMPTY_CATCH', 'HAS_GENERIC_CATCH'],
+      '오류처리': ['HAS_EMPTY_CATCH', 'HAS_GENERIC_CATCH']
     };
 
     for (const [keyword, tags] of Object.entries(mappings)) {
@@ -180,32 +273,44 @@ export class TagRequirementAnalyzer {
     const foundTags = new Set();
     const matchedKeywords = [];
 
-    // 키워드 매칭
-    for (const [keyword, tags] of this.keywordTagMapping) {
-      if (text.includes(keyword)) {
-        tags.forEach(t => foundTags.add(t));
-        matchedKeywords.push(keyword);
+    // 카테고리 결정: category > contextType > 'unknown'
+    const effectiveCategory = rule.category || rule.contextType || 'unknown';
+
+    // 1. 키워드 매칭 (우선) - 방어 코드 추가
+    if (this.keywordTagMapping && this.keywordTagMapping.size > 0) {
+      for (const [keyword, tags] of this.keywordTagMapping.entries()) {
+        if (!keyword || !tags) continue;
+        if (text.includes(keyword)) {
+          tags.forEach(t => {
+            if (t) foundTags.add(t);
+          });
+          matchedKeywords.push(keyword);
+        }
       }
     }
 
-    // 카테고리 기반 추가 태그
-    const categoryTags = this.getTagsByRuleCategory(rule.category);
-    categoryTags.forEach(t => foundTags.add(t));
-
-    // 기존 keywords 필드 활용
+    // 2. 기존 keywords 필드 활용
     if (rule.keywords && Array.isArray(rule.keywords)) {
       for (const kw of rule.keywords) {
         const kwLower = kw.toLowerCase();
         if (this.keywordTagMapping.has(kwLower)) {
           this.keywordTagMapping.get(kwLower).forEach(t => foundTags.add(t));
+          matchedKeywords.push(kwLower);
         }
       }
     }
 
+    // 3. 카테고리/contextType 기반 추가 태그 (키워드 매칭 결과가 없을 때만 폴백)
+    if (foundTags.size === 0) {
+      const categoryTags = this.getTagsByRuleCategory(effectiveCategory);
+      categoryTags.forEach(t => foundTags.add(t));
+    }
+
     return {
       tags: Array.from(foundTags),
-      matchedKeywords,
-      confidence: this.calculateConfidence(foundTags.size, matchedKeywords.length)
+      matchedKeywords: [...new Set(matchedKeywords)],  // 중복 제거
+      confidence: this.calculateConfidence(foundTags.size, matchedKeywords.length),
+      effectiveCategory  // 디버그용
     };
   }
 
@@ -345,6 +450,9 @@ JSON만 반환하세요.`;
     let reasoning = `키워드 매칭: [${ruleBasedResult.matchedKeywords.join(', ')}]`;
     let confidence = ruleBasedResult.confidence;
 
+    // 카테고리 결정: category > contextType > 'unknown'
+    const effectiveCategory = rule.category || rule.contextType || ruleBasedResult.effectiveCategory || 'unknown';
+
     if (llmResult) {
       // LLM 필수 태그 추가
       llmResult.requiredTags.forEach(t => {
@@ -371,7 +479,7 @@ JSON만 반환하세요.`;
     return {
       ruleId: rule.ruleId || rule.id,
       title: rule.title,
-      category: rule.category,
+      category: effectiveCategory,  // category 또는 contextType 사용
       requiredTags: Array.from(requiredTags),
       optionalTags: Array.from(optionalTags),
       suggestedNewTags: Array.from(suggestedNewTags),
@@ -391,14 +499,32 @@ JSON만 반환하세요.`;
     const { batchSize = 5, useLLM = false } = options;
     const results = [];
 
+    // null/undefined 방어
+    if (!Array.isArray(rules)) {
+      logger.warn('⚠️ rules가 배열이 아닙니다.');
+      return results;
+    }
+
     logger.info(`📊 ${rules.length}개 규칙 분석 시작...`);
 
     for (let i = 0; i < rules.length; i += batchSize) {
       const batch = rules.slice(i, i + batchSize);
       
       for (const rule of batch) {
-        const result = await this.analyzeRule(rule, { useLLM });
-        results.push(result);
+        // 개별 규칙 null 체크
+        if (!rule) {
+          logger.warn('⚠️ 규칙 항목이 null/undefined입니다.');
+          continue;
+        }
+        
+        try {
+          const result = await this.analyzeRule(rule, { useLLM });
+          if (result) {
+            results.push(result);
+          }
+        } catch (error) {
+          logger.warn(`⚠️ 규칙 분석 실패 (${rule.ruleId || rule.title}): ${error.message}`);
+        }
       }
 
       logger.info(`  진행: ${Math.min(i + batchSize, rules.length)}/${rules.length}`);
@@ -431,17 +557,57 @@ JSON만 반환하세요.`;
    * 카테고리별 기본 태그 반환
    */
   getTagsByRuleCategory(category) {
+    // 카테고리 기반 태그 매핑 확장
+    // 키워드 매칭이 실패했을 때만 폴백으로 사용
     const categoryTagMap = {
-      'resource_management': ['RESOURCE_LEAK_RISK'],
-      'security': ['SQL_INJECTION_RISK', 'HAS_HARDCODED_PASSWORD'],
-      'security_vulnerability': ['SQL_INJECTION_RISK'],
+      // 기존 카테고리
+      'resource_management': ['USES_CONNECTION', 'USES_STATEMENT', 'USES_RESULTSET'],
+      'security': [],  // 보안은 키워드로 구체적 매칭 필요
+      'security_vulnerability': [],
       'architecture': ['IS_CONTROLLER', 'IS_SERVICE', 'IS_DAO'],
-      'exception_handling': ['HAS_EMPTY_CATCH', 'HAS_GENERIC_CATCH', 'POOR_ERROR_HANDLING'],
-      'performance': ['N_PLUS_ONE_RISK', 'HAS_DB_CALL_IN_LOOP'],
-      'performance_issue': ['N_PLUS_ONE_RISK']
+      'exception_handling': ['HAS_EMPTY_CATCH', 'HAS_GENERIC_CATCH'],
+      'performance': ['HAS_LOOP'],
+      'performance_issue': ['HAS_LOOP'],
+      
+      // 추가 카테고리 매핑
+      'logging': ['HAS_EMPTY_CATCH'],  // 로깅은 예외 처리와 관련
+      'error_handling': ['HAS_EMPTY_CATCH', 'HAS_GENERIC_CATCH'],
+      'coding_standard': [],  // 코딩 표준은 특정 태그 없음
+      'code_quality': [],
+      'naming': [],
+      'documentation': [],
+      'testing': [],
+      'transaction': ['HAS_TRANSACTIONAL', 'IS_SERVICE'],
+      'database': ['USES_CONNECTION', 'HAS_DB_CALL_IN_LOOP'],
+      'sql': ['HAS_SQL_CONCATENATION', 'USES_PREPARED_STATEMENT'],
+      'api': ['IS_CONTROLLER', 'HAS_REQUEST_MAPPING'],
+      'validation': [],
+      'concurrency': [],
+      'memory': [],
+      'io': ['USES_STREAM'],
+      
+      // contextType 매핑 (문서 섹션 타입)
+      'overview': [],  // 개요 - 특정 태그 없음
+      'scope': [],  // 범위 - 특정 태그 없음
+      'terminology': [],  // 용어 - 특정 태그 없음
+      'consensus': [],  // 합의사항 - 특정 태그 없음
+      'guideline': [],  // 가이드라인 - 특정 태그 없음
+      'rule': [],  // 규칙 - 특정 태그 없음
+      'context': [],  // 컨텍스트 - 특정 태그 없음
+      
+      // 한글 카테고리
+      '아키텍처': ['IS_CONTROLLER', 'IS_SERVICE', 'IS_DAO'],
+      '보안': [],
+      '성능': ['HAS_LOOP'],
+      '예외처리': ['HAS_EMPTY_CATCH', 'HAS_GENERIC_CATCH'],
+      '트랜잭션': ['HAS_TRANSACTIONAL', 'IS_SERVICE'],
+      '데이터베이스': ['USES_CONNECTION', 'HAS_DB_CALL_IN_LOOP']
     };
 
-    return categoryTagMap[category] || [];
+    // 정규화된 카테고리로 검색 (소문자, 언더스코어 통일)
+    const normalizedCategory = (category || '').toLowerCase().replace(/[- ]/g, '_');
+    
+    return categoryTagMap[normalizedCategory] || [];
   }
 
   /**

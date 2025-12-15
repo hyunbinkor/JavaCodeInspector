@@ -270,7 +270,8 @@ program
   .description('규칙 파일에 tagCondition 자동 분석 및 적용 (통합)')
   .requiredOption('-i, --input <file>', '규칙 JSON 파일')
   .option('-o, --output <file>', '출력 파일 (기본: _tagged.json 접미사)')
-  .option('--llm', 'LLM 사용 (더 정확하지만 느림)')
+  .option('--llm', 'LLM 사용 (모든 규칙에 LLM 적용)')
+  .option('--llm-fallback', '매칭 실패 시에만 LLM 자동 사용 (권장)')
   .action(async (options) => {
     try {
       await applyTagConditions(options);
