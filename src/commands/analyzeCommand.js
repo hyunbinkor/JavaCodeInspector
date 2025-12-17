@@ -189,8 +189,9 @@ export async function applyTagConditions(options) {
   }
 
   // 1. 규칙 로드
-  const inputData = await loadJsonFile(options.input);
-  const rules = Array.isArray(inputData) ? inputData : (inputData.guidelines || []);
+  const inputPath = path.resolve('asset', 'rules', options.input);
+  const inputData = await loadJsonFile(inputPath);
+  const rules = Array.isArray(inputData) ? inputData : (inputData.guidelines.guidelines || []);
   
   const withCondition = rules.filter(r => r.tagCondition);
   const withoutCondition = rules.filter(r => !r.tagCondition);

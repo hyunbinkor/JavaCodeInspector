@@ -91,10 +91,12 @@ export async function importGuidelines(options) {
   const vectorClient = new VectorClient();
   await vectorClient.checkConnection();
 
+  await vectorClient.initializeSchema();
+
   let success = 0;
   for (const guideline of guidelines) {
     try {
-      await vectorClient.upsertGuideline(guideline);
+      await vectorClient.storeGuideline(guideline);
       success++;
     } catch (error) {
       logger.warn(`저장 실패 (${guideline.ruleId}): ${error.message}`);
