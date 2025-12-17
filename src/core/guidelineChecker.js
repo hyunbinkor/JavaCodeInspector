@@ -388,22 +388,22 @@ export class DevelopmentGuidelineChecker {
   async checkRules(sourceCode, astAnalysis, options = {}) {
     const violations = [];
     this.filteringStats.totalChecks++;
-  
+
     if (!options.skipStaticRules && this.staticRules.size > 0) {
       logger.info('  ⚠️ 정적 규칙 검사는 SonarQube 연동 후 지원 예정');
     }
-  
+
     if (!options.skipContextual) {
       const useUnified = options.useUnifiedPrompt !== false;
       const useTagFiltering = options.useTagFiltering !== false && this.tagFilteringEnabled;
-  
+
       let contextualViolations = [];
-  
+
       // 🆕 llm_with_ast / llm_contextual 분리 처리
       const allRules = Array.from(this.contextualRules.values());
       const llmWithAstRules = allRules.filter(r => r.checkType === 'llm_with_ast');
       const otherRules = allRules.filter(r => r.checkType !== 'llm_with_ast');
-  
+
       // llm_with_ast 규칙 검사
       if (llmWithAstRules.length > 0) {
         logger.info(`  🔬 llm_with_ast 규칙 검사: ${llmWithAstRules.length}개`);
@@ -412,13 +412,13 @@ export class DevelopmentGuidelineChecker {
         );
         contextualViolations.push(...astViolations);
       }
-  
+
       // llm_contextual 규칙 검사 (기존 방식)
       if (otherRules.length > 0) {
         logger.info(`  🤖 llm_contextual 규칙 검사: ${otherRules.length}개`);
         const originalRules = this.contextualRules;
         this.contextualRules = new Map(otherRules.map(r => [r.ruleId, r]));
-  
+
         let llmViolations;
         if (useTagFiltering) {
           llmViolations = await this.checkContextualRulesWithTags(
@@ -432,10 +432,10 @@ export class DevelopmentGuidelineChecker {
         contextualViolations.push(...llmViolations);
         this.contextualRules = originalRules;
       }
-  
+
       violations.push(...contextualViolations);
     }
-  
+
     const uniqueViolations = this.deduplicateViolations(violations);
     logger.info(`  📊 검사 완료: ${violations.length}개 → 중복 제거 후 ${uniqueViolations.length}개`);
     return uniqueViolations;
@@ -1141,41 +1141,45 @@ JSON만 출력하세요.`;
   async checkLLMWithAstRules(sourceCode, astAnalysis, rules, options = {}) {
     logger.info('    🔬 AST + LLM 하이브리드 검사 시작...');
     const startTime = Date.now();
-  
+
     // Step 1: AST 사전 검사
     const preCheckResults = await this.performAstPreCheck(sourceCode, astAnalysis, rules);
     const candidateResults = preCheckResults.filter(r => r.isCandidate);
-    
+
     logger.info(`      → ${rules.length}개 중 ${candidateResults.length}개 후보 선정`);
-  
+
     if (candidateResults.length === 0) {
       return [];
     }
-  
+
     // Step 2: LLM 검증
     this.filteringStats.llmCalls++;
-    const violations = await this.verifyWithAstContext(
-      sourceCode, astAnalysis, candidateResults, options
+    const llmViolations = await this.verifyWithAstContext(sourceCode, astAnalysis, candidateResults, options);
+
+    // Step 3: AST 교차 검증 (False Positive 제거)
+    const verifiedViolations = this.verifyViolationsWithAST(
+      llmViolations,
+      astAnalysis,
+      sourceCode
     );
-  
-    logger.info(`      ✅ 완료: ${violations.length}개 위반 (${Date.now() - startTime}ms)`);
-    return violations;
+
+    return verifiedViolations;
   }
-  
+
   async performAstPreCheck(sourceCode, astAnalysis, rules) {
     const results = [];
-  
+
     for (const rule of rules) {
       const result = { ruleId: rule.ruleId, rule, isCandidate: false, matchedConditions: [], skipReason: null };
       const astHints = rule.astHints || {};
-  
+
       if (Object.keys(astHints).length === 0) {
         result.isCandidate = true;
         result.matchedConditions.push('no_ast_hints_fallback');
         results.push(result);
         continue;
       }
-  
+
       // nodeTypes 검사
       if (astHints.nodeTypes?.length > 0) {
         if (this.checkNodeTypesPresent(astAnalysis, astHints.nodeTypes, sourceCode)) {
@@ -1186,7 +1190,7 @@ JSON만 출력하세요.`;
           continue;
         }
       }
-  
+
       // keywords 검사
       if (rule.keywords?.length > 0) {
         const lowerCode = sourceCode.toLowerCase();
@@ -1195,14 +1199,14 @@ JSON만 출력하세요.`;
           result.matchedConditions.push(`keywords: ${matched.join(', ')}`);
         }
       }
-  
+
       result.isCandidate = result.matchedConditions.length > 0;
       results.push(result);
     }
-  
+
     return results;
   }
-  
+
   checkNodeTypesPresent(astAnalysis, nodeTypes, sourceCode) {
     for (const nodeType of nodeTypes) {
       switch (nodeType) {
@@ -1218,20 +1222,20 @@ JSON만 출력하세요.`;
     }
     return false;
   }
-  
+
   checkAnnotationsPresent(astAnalysis, requiredAnnotations, sourceCode) {
     if (astAnalysis?.annotations) {
-      return requiredAnnotations.some(ann => 
+      return requiredAnnotations.some(ann =>
         astAnalysis.annotations.some(a => a.includes(ann.replace('@', '')))
       );
     }
     return requiredAnnotations.some(ann => sourceCode.includes(ann));
   }
-  
+
   async verifyWithAstContext(sourceCode, astAnalysis, candidateResults, options = {}) {
     const rules = candidateResults.map(c => c.rule);
     const prompt = this.buildLLMWithAstPrompt(sourceCode, astAnalysis, candidateResults);
-  
+
     try {
       const response = await this.llmService.generateCompletion(prompt, {
         model: this.guidelineModel,
@@ -1244,14 +1248,14 @@ JSON만 출력하세요.`;
       return this.verifyWithBatchPrompt(sourceCode, rules);
     }
   }
-  
+
   buildLLMWithAstPrompt(sourceCode, astAnalysis, candidateResults) {
     const astSummary = astAnalysis ? `
   ## 코드 구조
   - 클래스: ${astAnalysis.classes?.map(c => c.name).join(', ') || '없음'}
   - 메서드: ${astAnalysis.methods?.length || 0}개
   ` : '';
-  
+
     const rulesText = candidateResults.map((c, idx) => {
       const rule = c.rule;
       const checkPoints = rule.checkPoints || [];
@@ -1263,7 +1267,7 @@ JSON만 출력하세요.`;
   **예시**: Good: ${rule.examples?.good?.[0] || '없음'} / Bad: ${rule.examples?.bad?.[0] || '없음'}
   `;
     }).join('\n---\n');
-  
+
     return `Java 코드가 아래 가이드라인의 체크포인트를 준수하는지 검사하세요.
   
   ## 코드
@@ -1285,13 +1289,13 @@ JSON만 출력하세요.`;
   }
   \`\`\``;
   }
-  
+
   parseAstContextResponse(response, rules) {
     const violations = [];
     try {
       const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
       const parsed = JSON.parse(jsonMatch ? jsonMatch[1] : response.replace(/```/g, '').trim());
-  
+
       if (parsed.violations) {
         for (const v of parsed.violations) {
           const rule = rules.find(r => r.ruleId === v.ruleId);
@@ -1313,6 +1317,615 @@ JSON만 출력하세요.`;
       logger.warn(`      응답 파싱 실패: ${error.message}`);
     }
     return violations;
+  }
+
+  /**
+ * LLM이 발견한 위반을 AST/소스코드로 교차 검증
+ * 
+ * @param {array} violations - LLM이 보고한 위반 목록
+ * @param {object} astAnalysis - AST 분석 결과
+ * @param {string} sourceCode - 원본 소스 코드
+ * @returns {array} 검증된 위반 목록 (False Positive 제거됨)
+ */
+  verifyViolationsWithAST(violations, astAnalysis, sourceCode) {
+    if (!violations || violations.length === 0) {
+      return [];
+    }
+
+    logger.info(`      🔍 AST 교차 검증 시작: ${violations.length}개 위반`);
+
+    const verifiedViolations = [];
+    const filteredOut = [];
+
+    for (const violation of violations) {
+      const verificationResult = this.verifySingleViolation(
+        violation,
+        astAnalysis,
+        sourceCode
+      );
+
+      if (verificationResult.verified) {
+        // 검증 통과 - 위반 유지
+        verifiedViolations.push({
+          ...violation,
+          astVerified: true,
+          verificationMethod: verificationResult.method
+        });
+      } else {
+        // 검증 실패 - False Positive로 판단
+        filteredOut.push({
+          ruleId: violation.ruleId,
+          line: violation.line,
+          reason: verificationResult.reason
+        });
+      }
+    }
+
+    // 결과 로깅
+    if (filteredOut.length > 0) {
+      logger.info(`      → 검증 통과: ${verifiedViolations.length}개, False Positive 제거: ${filteredOut.length}개`);
+      logger.debug(`      제거된 위반: ${JSON.stringify(filteredOut)}`);
+    } else {
+      logger.info(`      → 모든 위반 검증 통과: ${verifiedViolations.length}개`);
+    }
+
+    return verifiedViolations;
+  }
+
+  /**
+   * 단일 위반에 대한 검증 수행
+   * 
+   * @param {object} violation - 위반 객체
+   * @param {object} astAnalysis - AST 분석 결과
+   * @param {string} sourceCode - 소스 코드
+   * @returns {object} { verified: boolean, method: string, reason?: string }
+   */
+  verifySingleViolation(violation, astAnalysis, sourceCode) {
+    // llm_with_ast가 아닌 위반은 검증 없이 통과
+    if (violation.checkType !== 'llm_with_ast') {
+      return { verified: true, method: 'skip_non_ast' };
+    }
+
+    // 규칙 정보 조회
+    const rule = this.contextualRules.get(violation.ruleId);
+    if (!rule || !rule.astHints) {
+      // 규칙 정보 없으면 LLM 결과 신뢰
+      return { verified: true, method: 'no_rule_info' };
+    }
+
+    const astHints = rule.astHints;
+    const line = violation.line || 0;
+
+    // 검증 유형 결정 및 실행
+    try {
+      // 1. 빈 catch 블록 검증
+      if (astHints.checkEmpty && astHints.nodeTypes?.includes('CatchClause')) {
+        return this.verifyEmptyCatchBlock(line, sourceCode);
+      }
+
+      // 2. 빈 if/else 블록 검증
+      if (astHints.checkEmpty && astHints.nodeTypes?.includes('IfStatement')) {
+        return this.verifyEmptyIfBlock(line, sourceCode);
+      }
+
+      // 3. 메서드 길이 검증
+      if (astHints.maxLineCount && astHints.nodeTypes?.includes('MethodDeclaration')) {
+        return this.verifyMethodLength(line, sourceCode, astHints.maxLineCount);
+      }
+
+      // 4. 복잡도 검증
+      if (astHints.maxCyclomaticComplexity) {
+        return this.verifyCyclomaticComplexity(astAnalysis, astHints.maxCyclomaticComplexity);
+      }
+
+      // 5. 필수 어노테이션 검증
+      if (astHints.requiredAnnotations && astHints.requiredAnnotations.length > 0) {
+        return this.verifyRequiredAnnotations(line, sourceCode, astAnalysis, astHints.requiredAnnotations);
+      }
+
+      // 6. 명명 규칙 검증 (의미론적 검사는 LLM 신뢰)
+      if (astHints.namingPattern) {
+        return this.verifyNamingPattern(line, sourceCode, astHints.namingPattern);
+      }
+
+      // 기타 - 검증 로직 없으면 LLM 결과 신뢰
+      return { verified: true, method: 'no_verification_logic' };
+
+    } catch (error) {
+      logger.warn(`      검증 중 오류 (${violation.ruleId}): ${error.message}`);
+      // 오류 시 LLM 결과 신뢰
+      return { verified: true, method: 'error_fallback' };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 빈 catch 블록 검증
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 빈 catch 블록 검증
+   * 
+   * @param {number} reportedLine - LLM이 보고한 라인
+   * @param {string} sourceCode - 소스 코드
+   * @returns {object} 검증 결과
+   */
+  verifyEmptyCatchBlock(reportedLine, sourceCode) {
+    const lines = sourceCode.split('\n');
+
+    // 보고된 라인 근처에서 catch 블록 찾기 (±5줄 범위)
+    const searchStart = Math.max(0, reportedLine - 6);
+    const searchEnd = Math.min(lines.length, reportedLine + 5);
+
+    for (let i = searchStart; i < searchEnd; i++) {
+      const line = lines[i];
+
+      // catch 키워드 찾기
+      if (/\bcatch\s*\(/.test(line)) {
+        // catch 블록의 시작과 끝 찾기
+        const catchBlockInfo = this.extractCatchBlockContent(lines, i);
+
+        if (catchBlockInfo.found) {
+          const isEmpty = this.isCatchBlockEmpty(catchBlockInfo.content);
+
+          if (isEmpty) {
+            return {
+              verified: true,
+              method: 'catch_block_verified_empty',
+              details: `라인 ${i + 1}의 catch 블록이 비어있음 확인`
+            };
+          } else {
+            return {
+              verified: false,
+              method: 'catch_block_not_empty',
+              reason: `라인 ${i + 1}의 catch 블록에 코드가 있음`
+            };
+          }
+        }
+      }
+    }
+
+    // catch 블록을 찾지 못한 경우
+    // LLM이 다른 위치를 보고했을 수 있으므로 전체 코드에서 빈 catch 찾기
+    const emptyCatchExists = this.hasAnyCatchBlockEmpty(sourceCode);
+
+    if (emptyCatchExists) {
+      return {
+        verified: true,
+        method: 'empty_catch_found_elsewhere',
+        details: '빈 catch 블록이 코드 내 존재함'
+      };
+    }
+
+    return {
+      verified: false,
+      method: 'no_empty_catch_found',
+      reason: '코드에서 빈 catch 블록을 찾을 수 없음'
+    };
+  }
+
+  /**
+   * catch 블록 내용 추출
+   * 
+   * @param {string[]} lines - 소스 코드 라인 배열
+   * @param {number} catchLineIndex - catch 키워드가 있는 라인 인덱스
+   * @returns {object} { found: boolean, content: string }
+   */
+  extractCatchBlockContent(lines, catchLineIndex) {
+    let braceCount = 0;
+    let started = false;
+    let content = '';
+
+    for (let i = catchLineIndex; i < lines.length; i++) {
+      const line = lines[i];
+
+      for (const char of line) {
+        if (char === '{') {
+          braceCount++;
+          started = true;
+        } else if (char === '}') {
+          braceCount--;
+          if (started && braceCount === 0) {
+            return { found: true, content: content.trim() };
+          }
+        } else if (started && braceCount > 0) {
+          content += char;
+        }
+      }
+
+      if (started && braceCount > 0) {
+        content += '\n';
+      }
+    }
+
+    return { found: false, content: '' };
+  }
+
+  /**
+   * catch 블록이 비어있는지 확인
+   * 
+   * @param {string} content - catch 블록 내용
+   * @returns {boolean} 비어있으면 true
+   */
+  isCatchBlockEmpty(content) {
+    // 공백, 줄바꿈, 주석만 있으면 비어있는 것으로 판단
+    const cleaned = content
+      .replace(/\/\/.*$/gm, '')  // 한 줄 주석 제거
+      .replace(/\/\*[\s\S]*?\*\//g, '')  // 블록 주석 제거
+      .replace(/\s+/g, '');  // 공백 제거
+
+    return cleaned.length === 0;
+  }
+
+  /**
+   * 코드 전체에서 빈 catch 블록 존재 여부 확인
+   * 
+   * @param {string} sourceCode - 소스 코드
+   * @returns {boolean} 빈 catch 블록이 있으면 true
+   */
+  hasAnyCatchBlockEmpty(sourceCode) {
+    // 빈 catch 블록 패턴: catch(...) { } 또는 catch(...) { // 주석만 }
+    const emptyCatchPattern = /catch\s*\([^)]*\)\s*\{\s*(\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/;
+    return emptyCatchPattern.test(sourceCode);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 빈 if 블록 검증
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 빈 if/else 블록 검증
+   * 
+   * @param {number} reportedLine - LLM이 보고한 라인
+   * @param {string} sourceCode - 소스 코드
+   * @returns {object} 검증 결과
+   */
+  verifyEmptyIfBlock(reportedLine, sourceCode) {
+    const lines = sourceCode.split('\n');
+    const searchStart = Math.max(0, reportedLine - 6);
+    const searchEnd = Math.min(lines.length, reportedLine + 5);
+
+    for (let i = searchStart; i < searchEnd; i++) {
+      const line = lines[i];
+
+      if (/\bif\s*\(/.test(line) || /\belse\s*\{/.test(line)) {
+        const blockInfo = this.extractBlockContent(lines, i);
+
+        if (blockInfo.found && this.isBlockEmpty(blockInfo.content)) {
+          return {
+            verified: true,
+            method: 'if_block_verified_empty'
+          };
+        }
+      }
+    }
+
+    // 전체에서 빈 if/else 블록 찾기
+    const emptyIfPattern = /(if\s*\([^)]*\)|else)\s*\{\s*(\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/;
+    if (emptyIfPattern.test(sourceCode)) {
+      return { verified: true, method: 'empty_if_found_elsewhere' };
+    }
+
+    return {
+      verified: false,
+      reason: '코드에서 빈 if/else 블록을 찾을 수 없음'
+    };
+  }
+
+  /**
+   * 블록 내용 추출 (일반용)
+   * 
+   * @param {string[]} lines - 소스 코드 라인 배열
+   * @param {number} startLineIndex - 시작 라인 인덱스
+   * @returns {object} { found: boolean, content: string }
+   */
+  extractBlockContent(lines, startLineIndex) {
+    let braceCount = 0;
+    let started = false;
+    let content = '';
+
+    for (let i = startLineIndex; i < lines.length; i++) {
+      const line = lines[i];
+
+      for (const char of line) {
+        if (char === '{') {
+          braceCount++;
+          started = true;
+        } else if (char === '}') {
+          braceCount--;
+          if (started && braceCount === 0) {
+            return { found: true, content: content.trim() };
+          }
+        } else if (started && braceCount > 0) {
+          content += char;
+        }
+      }
+
+      if (started && braceCount > 0) {
+        content += '\n';
+      }
+    }
+
+    return { found: false, content: '' };
+  }
+
+  /**
+   * 블록이 비어있는지 확인 (일반용)
+   * 
+   * @param {string} content - 블록 내용
+   * @returns {boolean} 비어있으면 true
+   */
+  isBlockEmpty(content) {
+    const cleaned = content
+      .replace(/\/\/.*$/gm, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\s+/g, '');
+
+    return cleaned.length === 0;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 메서드 길이 검증
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 메서드 길이 검증
+   * 
+   * @param {number} reportedLine - LLM이 보고한 라인
+   * @param {string} sourceCode - 소스 코드
+   * @param {number} maxLineCount - 최대 허용 라인 수
+   * @returns {object} 검증 결과
+   */
+  verifyMethodLength(reportedLine, sourceCode, maxLineCount) {
+    const lines = sourceCode.split('\n');
+
+    // 보고된 라인 근처에서 메서드 시작 찾기
+    const methodInfo = this.findMethodAtLine(lines, reportedLine);
+
+    if (!methodInfo.found) {
+      // 메서드를 찾지 못하면 전체에서 긴 메서드 있는지 확인
+      const hasLongMethod = this.hasAnyLongMethod(sourceCode, maxLineCount);
+      if (hasLongMethod) {
+        return { verified: true, method: 'long_method_found_elsewhere' };
+      }
+      return { verified: false, reason: '긴 메서드를 찾을 수 없음' };
+    }
+
+    const methodLineCount = methodInfo.endLine - methodInfo.startLine + 1;
+
+    if (methodLineCount > maxLineCount) {
+      return {
+        verified: true,
+        method: 'method_length_verified',
+        details: `메서드 '${methodInfo.name}' 길이: ${methodLineCount}줄 (최대: ${maxLineCount}줄)`
+      };
+    }
+
+    return {
+      verified: false,
+      reason: `메서드 '${methodInfo.name}' 길이 ${methodLineCount}줄은 ${maxLineCount}줄 이하`
+    };
+  }
+
+  /**
+   * 특정 라인에서 메서드 찾기
+   * 
+   * @param {string[]} lines - 소스 코드 라인 배열
+   * @param {number} targetLine - 대상 라인 (1-based)
+   * @returns {object} { found: boolean, name?: string, startLine?: number, endLine?: number }
+   */
+  findMethodAtLine(lines, targetLine) {
+    // 메서드 시작 패턴
+    const methodPattern = /(?:public|private|protected)?\s*(?:static)?\s*\w+\s+(\w+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{/;
+
+    // targetLine 위쪽으로 메서드 시작 찾기
+    for (let i = Math.min(targetLine - 1, lines.length - 1); i >= 0; i--) {
+      const line = lines[i];
+      const match = line.match(methodPattern);
+
+      if (match) {
+        // 메서드 끝 찾기
+        let braceCount = 0;
+        let endLine = i;
+
+        for (let j = i; j < lines.length; j++) {
+          for (const char of lines[j]) {
+            if (char === '{') braceCount++;
+            else if (char === '}') braceCount--;
+          }
+
+          if (braceCount === 0 && j > i) {
+            endLine = j;
+            break;
+          }
+        }
+
+        return {
+          found: true,
+          name: match[1],
+          startLine: i,
+          endLine: endLine
+        };
+      }
+    }
+
+    return { found: false };
+  }
+
+  /**
+   * 코드에 긴 메서드가 있는지 확인
+   * 
+   * @param {string} sourceCode - 소스 코드
+   * @param {number} maxLineCount - 최대 허용 라인 수
+   * @returns {boolean} 긴 메서드가 있으면 true
+   */
+  hasAnyLongMethod(sourceCode, maxLineCount) {
+    const lines = sourceCode.split('\n');
+    const methodPattern = /(?:public|private|protected)?\s*(?:static)?\s*\w+\s+\w+\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{/;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (methodPattern.test(lines[i])) {
+        const methodInfo = this.findMethodAtLine(lines, i + 1);
+        if (methodInfo.found) {
+          const length = methodInfo.endLine - methodInfo.startLine + 1;
+          if (length > maxLineCount) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 복잡도 검증
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 순환 복잡도 검증
+   * 
+   * @param {object} astAnalysis - AST 분석 결과
+   * @param {number} maxComplexity - 최대 허용 복잡도
+   * @returns {object} 검증 결과
+   */
+  verifyCyclomaticComplexity(astAnalysis, maxComplexity) {
+    const actualComplexity = astAnalysis?.cyclomaticComplexity || 0;
+
+    if (actualComplexity > maxComplexity) {
+      return {
+        verified: true,
+        method: 'complexity_verified',
+        details: `복잡도: ${actualComplexity} (최대: ${maxComplexity})`
+      };
+    }
+
+    return {
+      verified: false,
+      reason: `복잡도 ${actualComplexity}는 ${maxComplexity} 이하`
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 필수 어노테이션 검증
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 필수 어노테이션 검증
+   * 
+   * @param {number} reportedLine - LLM이 보고한 라인
+   * @param {string} sourceCode - 소스 코드
+   * @param {object} astAnalysis - AST 분석 결과
+   * @param {array} requiredAnnotations - 필수 어노테이션 목록
+   * @returns {object} 검증 결과
+   */
+  verifyRequiredAnnotations(reportedLine, sourceCode, astAnalysis, requiredAnnotations) {
+    // AST 분석 결과에서 어노테이션 확인
+    const presentAnnotations = astAnalysis?.annotations?.map(a =>
+      typeof a === 'string' ? a : a.name
+    ) || [];
+
+    // 소스 코드에서도 확인
+    const sourceAnnotations = [];
+    const annotationPattern = /@(\w+)/g;
+    let match;
+    while ((match = annotationPattern.exec(sourceCode)) !== null) {
+      sourceAnnotations.push(match[1]);
+    }
+
+    const allAnnotations = new Set([...presentAnnotations, ...sourceAnnotations]);
+
+    // 필수 어노테이션 중 없는 것 찾기
+    const missingAnnotations = requiredAnnotations.filter(req => {
+      const reqName = req.replace('@', '');
+      return !allAnnotations.has(reqName);
+    });
+
+    if (missingAnnotations.length > 0) {
+      return {
+        verified: true,
+        method: 'missing_annotations_verified',
+        details: `누락된 어노테이션: ${missingAnnotations.join(', ')}`
+      };
+    }
+
+    return {
+      verified: false,
+      reason: '모든 필수 어노테이션이 존재함'
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 명명 규칙 검증
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 명명 규칙 검증 (형식만, 의미는 LLM 신뢰)
+   * 
+   * @param {number} reportedLine - LLM이 보고한 라인
+   * @param {string} sourceCode - 소스 코드
+   * @param {string} expectedPattern - 예상 명명 패턴 (PascalCase, camelCase 등)
+   * @returns {object} 검증 결과
+   */
+  verifyNamingPattern(reportedLine, sourceCode, expectedPattern) {
+    const lines = sourceCode.split('\n');
+    const targetLine = lines[reportedLine - 1] || '';
+
+    // 패턴별 검증 정규식
+    const patterns = {
+      'PascalCase': /^[A-Z][a-zA-Z0-9]*$/,
+      'camelCase': /^[a-z][a-zA-Z0-9]*$/,
+      'UPPER_SNAKE_CASE': /^[A-Z][A-Z0-9_]*$/,
+      'snake_case': /^[a-z][a-z0-9_]*$/
+    };
+
+    const patternRegex = patterns[expectedPattern];
+    if (!patternRegex) {
+      // 알 수 없는 패턴 - LLM 결과 신뢰
+      return { verified: true, method: 'unknown_pattern_trust_llm' };
+    }
+
+    // 라인에서 식별자 추출
+    const identifierMatches = targetLine.match(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g) || [];
+
+    // 위반되는 식별자가 있는지 확인
+    for (const identifier of identifierMatches) {
+      // Java 키워드 제외
+      if (this.isJavaKeyword(identifier)) continue;
+
+      // 패턴 위반 확인
+      if (!patternRegex.test(identifier)) {
+        return {
+          verified: true,
+          method: 'naming_pattern_violation_found',
+          details: `'${identifier}'는 ${expectedPattern} 규칙 위반`
+        };
+      }
+    }
+
+    // 해당 라인에서 위반 못 찾음 - 의미론적 위반일 수 있으므로 LLM 신뢰
+    return { verified: true, method: 'naming_semantic_trust_llm' };
+  }
+
+  /**
+   * Java 키워드 여부 확인
+   * 
+   * @param {string} word - 확인할 단어
+   * @returns {boolean} 키워드면 true
+   */
+  isJavaKeyword(word) {
+    const keywords = [
+      'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch',
+      'char', 'class', 'const', 'continue', 'default', 'do', 'double',
+      'else', 'enum', 'extends', 'final', 'finally', 'float', 'for',
+      'goto', 'if', 'implements', 'import', 'instanceof', 'int',
+      'interface', 'long', 'native', 'new', 'package', 'private',
+      'protected', 'public', 'return', 'short', 'static', 'strictfp',
+      'super', 'switch', 'synchronized', 'this', 'throw', 'throws',
+      'transient', 'try', 'void', 'volatile', 'while', 'true', 'false', 'null',
+      // 추가 예약어
+      'var', 'yield', 'record', 'sealed', 'permits', 'non-sealed'
+    ];
+    return keywords.includes(word);
   }
 }
 

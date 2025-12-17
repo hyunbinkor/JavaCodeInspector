@@ -637,7 +637,7 @@ export class GuidelineExtractor {
       // ─────────────────────────────────────────────────────────
       // checkType 검증 및 정규화
       // ─────────────────────────────────────────────────────────
-      const validCheckTypes = ['regex', 'ast', 'combined', 'llm_contextual'];
+      const validCheckTypes = ['regex', 'ast', 'combined', 'llm_contextual', 'llm_with_ast'];
       let checkType = analysis.checkType || 'regex';
 
       // 레거시 checkType 변환
@@ -746,6 +746,23 @@ export class GuidelineExtractor {
         category: category,
         description: analysis.enhancedDescription || ruleText
       });
+
+      // ═══════════════════════════════════════════════════════════════════
+      // AST 힌트 기반 llm_with_ast 자동 결정
+      // ═══════════════════════════════════════════════════════════════════
+      if (astHints && Object.keys(astHints).length > 0) {
+        // ast 또는 combined → llm_with_ast로 업그레이드
+        if (checkType === 'ast' || checkType === 'combined') {
+          const originalType = checkType;
+          checkType = 'llm_with_ast';
+          logger.info(`  🔄 [${ruleId}] checkType 업그레이드: ${originalType} → llm_with_ast`);
+        }
+        // regex지만 구조적 AST 힌트가 있으면 llm_with_ast
+        else if (checkType === 'regex' && this.hasStructuralAstHints(astHints)) {
+          checkType = 'llm_with_ast';
+          logger.info(`  🔄 [${ruleId}] checkType 업그레이드: regex → llm_with_ast (구조적 AST 힌트 존재)`);
+        }
+      }
 
       // ─────────────────────────────────────────────────────────
       // 최종 guideline 객체 생성
@@ -1276,5 +1293,28 @@ ${ruleText}
     }
 
     return checkPoints;
+  }
+
+  /**
+ * 구조적 AST 힌트 존재 여부 확인
+ */
+  hasStructuralAstHints(astHints) {
+    if (!astHints) return false;
+
+    const structuralHints = [
+      'nodeTypes', 'checkEmpty', 'maxLineCount', 'maxCyclomaticComplexity',
+      'maxNestingDepth', 'maxParameters', 'minBodyStatements', 'maxBodyStatements',
+      'requiredAnnotations', 'forbiddenAnnotations', 'requiresLogging', 'requiresNullCheck'
+    ];
+
+    for (const hint of structuralHints) {
+      const value = astHints[hint];
+      if (value !== undefined && value !== null) {
+        if (Array.isArray(value) && value.length > 0) return true;
+        if (typeof value === 'boolean' || typeof value === 'number') return true;
+      }
+    }
+
+    return false;
   }
 }
