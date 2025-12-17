@@ -388,42 +388,56 @@ export class DevelopmentGuidelineChecker {
   async checkRules(sourceCode, astAnalysis, options = {}) {
     const violations = [];
     this.filteringStats.totalChecks++;
-
-    // Step 1: 정적 규칙 검사 (SonarQube 연동 전까지 선택적)
+  
     if (!options.skipStaticRules && this.staticRules.size > 0) {
       logger.info('  ⚠️ 정적 규칙 검사는 SonarQube 연동 후 지원 예정');
-      // TODO: SonarQube 연동 시 구현
     }
-
-    // Step 2: 컨텍스트 규칙 검사 (LLM 전담)
+  
     if (!options.skipContextual) {
-      const useUnified = options.useUnifiedPrompt !== false; // 기본: true
-      const useTagFiltering = options.useTagFiltering !== false && this.tagFilteringEnabled; // 기본: true
-
-      let contextualViolations;
-
-      if (useTagFiltering) {
-        // v3.0: 태그 기반 필터링 방식
-        contextualViolations = await this.checkContextualRulesWithTags(
-          sourceCode,
-          astAnalysis,
-          { useUnifiedPrompt: useUnified }
+      const useUnified = options.useUnifiedPrompt !== false;
+      const useTagFiltering = options.useTagFiltering !== false && this.tagFilteringEnabled;
+  
+      let contextualViolations = [];
+  
+      // 🆕 llm_with_ast / llm_contextual 분리 처리
+      const allRules = Array.from(this.contextualRules.values());
+      const llmWithAstRules = allRules.filter(r => r.checkType === 'llm_with_ast');
+      const otherRules = allRules.filter(r => r.checkType !== 'llm_with_ast');
+  
+      // llm_with_ast 규칙 검사
+      if (llmWithAstRules.length > 0) {
+        logger.info(`  🔬 llm_with_ast 규칙 검사: ${llmWithAstRules.length}개`);
+        const astViolations = await this.checkLLMWithAstRules(
+          sourceCode, astAnalysis, llmWithAstRules, options
         );
-      } else if (useUnified) {
-        // 기존 통합 프롬프트 방식 (효율적)
-        contextualViolations = await this.checkContextualRulesUnified(sourceCode, astAnalysis);
-      } else {
-        // 기존 배치 방식 (폴백)
-        contextualViolations = await this.checkContextualRulesBatch(sourceCode);
+        contextualViolations.push(...astViolations);
       }
-
+  
+      // llm_contextual 규칙 검사 (기존 방식)
+      if (otherRules.length > 0) {
+        logger.info(`  🤖 llm_contextual 규칙 검사: ${otherRules.length}개`);
+        const originalRules = this.contextualRules;
+        this.contextualRules = new Map(otherRules.map(r => [r.ruleId, r]));
+  
+        let llmViolations;
+        if (useTagFiltering) {
+          llmViolations = await this.checkContextualRulesWithTags(
+            sourceCode, astAnalysis, { useUnifiedPrompt: useUnified }
+          );
+        } else if (useUnified) {
+          llmViolations = await this.checkContextualRulesUnified(sourceCode, astAnalysis);
+        } else {
+          llmViolations = await this.checkContextualRulesBatch(sourceCode);
+        }
+        contextualViolations.push(...llmViolations);
+        this.contextualRules = originalRules;
+      }
+  
       violations.push(...contextualViolations);
     }
-
-    // 중복 제거
+  
     const uniqueViolations = this.deduplicateViolations(violations);
     logger.info(`  📊 검사 완료: ${violations.length}개 → 중복 제거 후 ${uniqueViolations.length}개`);
-
     return uniqueViolations;
   }
 
@@ -1122,6 +1136,183 @@ JSON만 출력하세요.`;
     }
     this.tagFilteringEnabled = enabled;
     return true;
+  }
+
+  async checkLLMWithAstRules(sourceCode, astAnalysis, rules, options = {}) {
+    logger.info('    🔬 AST + LLM 하이브리드 검사 시작...');
+    const startTime = Date.now();
+  
+    // Step 1: AST 사전 검사
+    const preCheckResults = await this.performAstPreCheck(sourceCode, astAnalysis, rules);
+    const candidateResults = preCheckResults.filter(r => r.isCandidate);
+    
+    logger.info(`      → ${rules.length}개 중 ${candidateResults.length}개 후보 선정`);
+  
+    if (candidateResults.length === 0) {
+      return [];
+    }
+  
+    // Step 2: LLM 검증
+    this.filteringStats.llmCalls++;
+    const violations = await this.verifyWithAstContext(
+      sourceCode, astAnalysis, candidateResults, options
+    );
+  
+    logger.info(`      ✅ 완료: ${violations.length}개 위반 (${Date.now() - startTime}ms)`);
+    return violations;
+  }
+  
+  async performAstPreCheck(sourceCode, astAnalysis, rules) {
+    const results = [];
+  
+    for (const rule of rules) {
+      const result = { ruleId: rule.ruleId, rule, isCandidate: false, matchedConditions: [], skipReason: null };
+      const astHints = rule.astHints || {};
+  
+      if (Object.keys(astHints).length === 0) {
+        result.isCandidate = true;
+        result.matchedConditions.push('no_ast_hints_fallback');
+        results.push(result);
+        continue;
+      }
+  
+      // nodeTypes 검사
+      if (astHints.nodeTypes?.length > 0) {
+        if (this.checkNodeTypesPresent(astAnalysis, astHints.nodeTypes, sourceCode)) {
+          result.matchedConditions.push(`nodeTypes: ${astHints.nodeTypes.join(', ')}`);
+        } else {
+          result.skipReason = `필수 노드 타입 없음`;
+          results.push(result);
+          continue;
+        }
+      }
+  
+      // keywords 검사
+      if (rule.keywords?.length > 0) {
+        const lowerCode = sourceCode.toLowerCase();
+        const matched = rule.keywords.filter(kw => lowerCode.includes(kw.toLowerCase()));
+        if (matched.length > 0) {
+          result.matchedConditions.push(`keywords: ${matched.join(', ')}`);
+        }
+      }
+  
+      result.isCandidate = result.matchedConditions.length > 0;
+      results.push(result);
+    }
+  
+    return results;
+  }
+  
+  checkNodeTypesPresent(astAnalysis, nodeTypes, sourceCode) {
+    for (const nodeType of nodeTypes) {
+      switch (nodeType) {
+        case 'ClassDeclaration': if (astAnalysis?.classes?.length > 0) return true; break;
+        case 'MethodDeclaration': if (astAnalysis?.methods?.length > 0) return true; break;
+        case 'CatchClause': if (sourceCode.includes('catch')) return true; break;
+        case 'TryStatement': if (sourceCode.includes('try')) return true; break;
+        case 'IfStatement': if (/\bif\s*\(/.test(sourceCode)) return true; break;
+        case 'ForStatement': if (/\bfor\s*\(/.test(sourceCode)) return true; break;
+        case 'ThrowStatement': if (/\bthrow\s+/.test(sourceCode)) return true; break;
+        default: if (sourceCode.toLowerCase().includes(nodeType.toLowerCase())) return true;
+      }
+    }
+    return false;
+  }
+  
+  checkAnnotationsPresent(astAnalysis, requiredAnnotations, sourceCode) {
+    if (astAnalysis?.annotations) {
+      return requiredAnnotations.some(ann => 
+        astAnalysis.annotations.some(a => a.includes(ann.replace('@', '')))
+      );
+    }
+    return requiredAnnotations.some(ann => sourceCode.includes(ann));
+  }
+  
+  async verifyWithAstContext(sourceCode, astAnalysis, candidateResults, options = {}) {
+    const rules = candidateResults.map(c => c.rule);
+    const prompt = this.buildLLMWithAstPrompt(sourceCode, astAnalysis, candidateResults);
+  
+    try {
+      const response = await this.llmService.generateCompletion(prompt, {
+        model: this.guidelineModel,
+        temperature: 0.1,
+        num_predict: 2500
+      });
+      return this.parseAstContextResponse(response, rules);
+    } catch (error) {
+      logger.warn(`      AST 검증 실패: ${error.message}`);
+      return this.verifyWithBatchPrompt(sourceCode, rules);
+    }
+  }
+  
+  buildLLMWithAstPrompt(sourceCode, astAnalysis, candidateResults) {
+    const astSummary = astAnalysis ? `
+  ## 코드 구조
+  - 클래스: ${astAnalysis.classes?.map(c => c.name).join(', ') || '없음'}
+  - 메서드: ${astAnalysis.methods?.length || 0}개
+  ` : '';
+  
+    const rulesText = candidateResults.map((c, idx) => {
+      const rule = c.rule;
+      const checkPoints = rule.checkPoints || [];
+      return `
+  ### ${idx + 1}. ${rule.title} (${rule.ruleId})
+  **AST 검사 기준**: ${rule.astDescription || rule.description}
+  **체크포인트**:
+  ${checkPoints.map((cp, i) => `  ${i + 1}. ${cp}`).join('\n') || '  - 규칙 설명 참조'}
+  **예시**: Good: ${rule.examples?.good?.[0] || '없음'} / Bad: ${rule.examples?.bad?.[0] || '없음'}
+  `;
+    }).join('\n---\n');
+  
+    return `Java 코드가 아래 가이드라인의 체크포인트를 준수하는지 검사하세요.
+  
+  ## 코드
+  \`\`\`java
+  ${this.truncateCode(sourceCode, 5000)}
+  \`\`\`
+  ${astSummary}
+  
+  ## 가이드라인 (${candidateResults.length}개)
+  ${rulesText}
+  
+  ## 응답 (JSON만)
+  \`\`\`json
+  {
+    "violations": [
+      { "ruleId": "ID", "title": "제목", "line": 번호, "severity": "심각도", 
+        "failedCheckPoint": "위반 체크포인트", "description": "위반 내용", "suggestion": "수정안" }
+    ]
+  }
+  \`\`\``;
+  }
+  
+  parseAstContextResponse(response, rules) {
+    const violations = [];
+    try {
+      const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
+      const parsed = JSON.parse(jsonMatch ? jsonMatch[1] : response.replace(/```/g, '').trim());
+  
+      if (parsed.violations) {
+        for (const v of parsed.violations) {
+          const rule = rules.find(r => r.ruleId === v.ruleId);
+          violations.push({
+            ruleId: v.ruleId || 'UNKNOWN',
+            title: v.title || rule?.title || '',
+            line: v.line || 0,
+            severity: v.severity || rule?.severity || 'MEDIUM',
+            description: v.description || '',
+            suggestion: v.suggestion || '',
+            failedCheckPoint: v.failedCheckPoint || null,
+            category: rule?.category || 'general',
+            checkType: 'llm_with_ast',
+            source: 'guideline_checker_ast'
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn(`      응답 파싱 실패: ${error.message}`);
+    }
+    return violations;
   }
 }
 
