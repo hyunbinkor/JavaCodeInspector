@@ -16,6 +16,7 @@ import { parseStringPromise } from 'xml2js';
 import { LLMService } from '../clients/llmService.js';
 import { saveJsonData } from '../utils/fileUtils.js';
 import logger from '../utils/loggerUtils.js';
+import { AstHintsConverter } from '../converters/astHintsConverter.js';
 
 export class GuidelineExtractor {
   constructor() {
@@ -24,6 +25,7 @@ export class GuidelineExtractor {
     this.llmService = new LLMService();
     this.tableOfContents = new Map();
     this.imageRelations = new Map();
+    this.astHintsConverter = new AstHintsConverter();
     this.docxZip = null;
   }
 
@@ -739,6 +741,12 @@ export class GuidelineExtractor {
         }
       }
 
+      const astConversionResult = this.astHintsConverter.convert(astHints, {
+        title: section.title,
+        category: category,
+        description: analysis.enhancedDescription || ruleText
+      });
+
       // ─────────────────────────────────────────────────────────
       // 최종 guideline 객체 생성
       // ─────────────────────────────────────────────────────────
@@ -756,8 +764,7 @@ export class GuidelineExtractor {
         // 패턴 (Checker 호환 형식)
         antiPatterns: antiPatterns,
         goodPatterns: goodPatterns,
-        // 하위 호환용 patterns (antiPatterns를 복사)
-        patterns: antiPatterns,
+        patterns: antiPatterns,  // 하위 호환
 
         // AST 힌트
         astHints: astHints || {},
@@ -768,6 +775,19 @@ export class GuidelineExtractor {
         // 예시 및 비즈니스 규칙
         examples: examples,
         businessRules: analysis.businessRules || [],
+
+        // ═══════════════════════════════════════════════════════════
+        // 🆕 v3.1 신규 필드 (Unified Schema)
+        // ═══════════════════════════════════════════════════════════
+
+        /** @type {string|null} 원래 checkType (마이그레이션용, 신규 추출 시 null) */
+        originalCheckType: null,
+
+        /** @type {string|null} AST 검사 기준 자연어 설명 (LLM용) */
+        astDescription: astConversionResult.astDescription,
+
+        /** @type {string[]} LLM 체크포인트 목록 */
+        checkPoints: astConversionResult.checkPoints,
 
         // 메타데이터
         contextDependencies: this.contextRules.map(c => c.ruleId),
@@ -909,13 +929,13 @@ export class GuidelineExtractor {
       description: ruleText.substring(0, 500),
 
       // Checker 호환 필드
-      checkType: 'regex',  // static_analysis 대신 regex
+      checkType: 'regex',
       message: `${section.title} 규칙을 위반했습니다`,
 
-      // 패턴 (빈 배열 - 수동 추가 필요)
+      // 패턴 (빈 배열)
       antiPatterns: [],
       goodPatterns: [],
-      patterns: [],  // 하위 호환
+      patterns: [],
 
       // AST 힌트
       astHints: {},
@@ -926,6 +946,13 @@ export class GuidelineExtractor {
       // 예시 및 비즈니스 규칙
       examples: { good: [], bad: [] },
       businessRules: [],
+
+      // ═══════════════════════════════════════════════════════════
+      // 🆕 v3.1 신규 필드 (Unified Schema) - 기본값
+      // ═══════════════════════════════════════════════════════════
+      originalCheckType: null,
+      astDescription: null,
+      checkPoints: [],
 
       // 메타데이터
       contextDependencies: [],
@@ -1148,5 +1175,106 @@ ${ruleText}
     logger.info(`  - 이미지 포함 섹션: ${imagesCount}개`);
 
     logger.info('\n' + '═'.repeat(60));
+  }
+
+  /**
+ * AST 힌트에서 자연어 설명 생성
+ * 
+ * @param {Object} astHints - AST 검사 힌트
+ * @param {string} checkType - 검사 타입
+ * @returns {string|null} 자연어 설명 또는 null
+ */
+  generateAstDescription(astHints, checkType) {
+    // AST 기반 규칙이 아니면 null
+    if (!['ast', 'combined', 'llm_with_ast'].includes(checkType)) {
+      return null;
+    }
+
+    if (!astHints || Object.keys(astHints).length === 0) {
+      return null;
+    }
+
+    const parts = [];
+
+    // 검사 대상 노드
+    if (astHints.nodeTypes && astHints.nodeTypes.length > 0) {
+      const nodeDescriptions = astHints.nodeTypes.map(type => {
+        return this.getNodeTypeDescription(type);
+      });
+      parts.push(`검사 대상: ${nodeDescriptions.join(', ')}`);
+    }
+
+    // checkConditions가 있으면 추가
+    if (astHints.checkConditions && astHints.checkConditions.length > 0) {
+      parts.push(`검사 조건: ${astHints.checkConditions.join(', ')}`);
+    }
+
+    return parts.length > 0 ? parts.join('. ') + '.' : null;
+  }
+
+  /**
+   * AST 노드 타입의 한글 설명 반환
+   * 
+   * @param {string} nodeType - AST 노드 타입
+   * @returns {string} 한글 설명
+   */
+  getNodeTypeDescription(nodeType) {
+    const descriptions = {
+      'ClassDeclaration': '클래스 선언',
+      'MethodDeclaration': '메서드 선언',
+      'VariableDeclaration': '변수 선언',
+      'VariableDeclarator': '변수 선언',
+      'IfStatement': 'if 조건문',
+      'ForStatement': 'for 반복문',
+      'WhileStatement': 'while 반복문',
+      'TryStatement': 'try 블록',
+      'CatchClause': 'catch 블록',
+      'ThrowStatement': 'throw 문',
+      'ReturnStatement': 'return 문',
+      'FieldDeclaration': '필드 선언',
+      'ConstructorDeclaration': '생성자',
+      'MethodInvocation': '메서드 호출',
+      'Annotation': '어노테이션'
+    };
+
+    return descriptions[nodeType] || nodeType;
+  }
+
+  /**
+   * AST 힌트에서 체크포인트 생성
+   * 
+   * @param {Object} astHints - AST 검사 힌트
+   * @param {string} checkType - 검사 타입
+   * @param {string} title - 규칙 제목
+   * @returns {string[]} 체크포인트 배열
+   */
+  generateCheckPoints(astHints, checkType, title) {
+    // AST 기반 규칙이 아니면 빈 배열
+    if (!['ast', 'combined', 'llm_with_ast'].includes(checkType)) {
+      return [];
+    }
+
+    const checkPoints = [];
+
+    if (!astHints || Object.keys(astHints).length === 0) {
+      // 기본 체크포인트
+      checkPoints.push(`${title} 규칙을 준수하고 있는가?`);
+      return checkPoints;
+    }
+
+    // nodeTypes 기반
+    if (astHints.nodeTypes && astHints.nodeTypes.length > 0) {
+      const nodeDesc = astHints.nodeTypes.map(t => this.getNodeTypeDescription(t)).join('/');
+      checkPoints.push(`${nodeDesc}이(가) 존재하는가?`);
+    }
+
+    // checkConditions 기반
+    if (astHints.checkConditions && astHints.checkConditions.length > 0) {
+      astHints.checkConditions.forEach(condition => {
+        checkPoints.push(condition.endsWith('?') ? condition : `${condition}?`);
+      });
+    }
+
+    return checkPoints;
   }
 }

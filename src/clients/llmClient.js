@@ -1,6 +1,6 @@
 import https from 'https';
 import http from 'http';
-import { config } from '../config.js';
+import { config } from '../config/config.js';
 import logger from '../utils/loggerUtils.js'
 
 // AWS SDK를 동적으로 import하여 Bedrock Runtime 클라이언트 사용 준비

@@ -35,6 +35,19 @@ import { RuleMatcher } from '../matcher/RuleMatcher.js';
 import logger from '../utils/loggerUtils.js';
 
 /**
+ * 규칙 검사 타입 상수
+ * @constant {Object}
+ */
+const CHECK_TYPES = {
+  REGEX: 'regex',
+  AST: 'ast',
+  COMBINED: 'combined',
+  STATIC_ANALYSIS: 'static_analysis',
+  LLM_CONTEXTUAL: 'llm_contextual',
+  LLM_WITH_AST: 'llm_with_ast'  // 🆕 신규: AST 정보를 활용한 LLM 검사
+};
+
+/**
  * 개발가이드 전용 검사기 클래스 (Layer1 Component)
  */
 export class DevelopmentGuidelineChecker {
@@ -44,29 +57,29 @@ export class DevelopmentGuidelineChecker {
   constructor() {
     // 컨텍스트 규칙 저장소 (LLM 검사용)
     this.contextualRules = new Map();
-    
+
     // 정적 규칙 저장소 (SonarQube 연동 준비용)
     this.staticRules = new Map();
-    
+
     // VectorDB 클라이언트
     this.vectorClient = new VectorClient();
-    
+
     // LLM 서비스
     this.llmService = new LLMService();
-    
+
     // 가이드 해석 전용 모델 (설정에서 오버라이드 가능)
     this.guidelineModel = process.env.GUIDELINE_LLM_MODEL || 'gpt-oss:120b';
 
     // ══════════════════════════════════════════════════════════════
     // v3.0 신규: 태그 기반 필터링 컴포넌트
     // ══════════════════════════════════════════════════════════════
-    
+
     /** @type {CodeProfiler} 코드 프로파일러 */
     this.codeProfiler = null;
-    
+
     /** @type {RuleMatcher} 규칙 매처 */
     this.ruleMatcher = null;
-    
+
     /** @type {boolean} 태그 필터링 활성화 여부 */
     this.tagFilteringEnabled = false;
 
@@ -167,19 +180,44 @@ export class DevelopmentGuidelineChecker {
             keywords: keywords,
             examples: examples,
             checkType: guideline.checkType || 'llm_contextual',
-            // v3.0: tagCondition 필드 추가
+
+            // v3.0: tagCondition 필드
             tagCondition: guideline.tagCondition || null,
             requiredTags: guideline.requiredTags || [],
-            excludeTags: guideline.excludeTags || []
+            excludeTags: guideline.excludeTags || [],
+
+            // ═══════════════════════════════════════════════════════════
+            // 🆕 v3.1 신규 필드 (Unified Schema)
+            // ═══════════════════════════════════════════════════════════
+
+            /** @type {string|null} 원래 checkType (마이그레이션 추적용) */
+            originalCheckType: guideline.originalCheckType || null,
+
+            /** @type {string|null} AST 검사 기준 자연어 설명 (LLM용) */
+            astDescription: guideline.astDescription || null,
+
+            /** @type {string[]} LLM 체크포인트 목록 */
+            checkPoints: Array.isArray(guideline.checkPoints) ? guideline.checkPoints : [],
+
+            /** @type {Object|null} AST 검사 힌트 */
+            astHints: guideline.astHints || null,
+
+            /** @type {string[]|null} 위반 패턴 정규식 */
+            antiPatterns: guideline.antiPatterns || null,
+
+            /** @type {string[]|null} 올바른 패턴 정규식 */
+            goodPatterns: guideline.goodPatterns || null
           };
 
-          // checkType에 따라 분류
+          // llm_with_ast는 LLM 파이프라인으로 처리하므로 contextualRules로 분류
           const isStaticRule = ['regex', 'ast', 'combined', 'static_analysis'].includes(guideline.checkType);
-          
-          if (isStaticRule) {
+          const isLLMRule = ['llm_contextual', 'llm_with_ast'].includes(guideline.checkType);
+
+          // Line 179-184 조건문 수정:
+          if (isStaticRule && !isLLMRule) {
             this.staticRules.set(guideline.ruleId, rule);
           } else {
-            // llm_contextual 또는 알 수 없는 타입은 컨텍스트 규칙으로
+            // llm_contextual, llm_with_ast, 또는 알 수 없는 타입
             this.contextualRules.set(guideline.ruleId, rule);
           }
         });
@@ -188,10 +226,18 @@ export class DevelopmentGuidelineChecker {
         const rulesWithTagCondition = Array.from(this.contextualRules.values())
           .filter(r => r.tagCondition).length;
 
+        // 🆕 새 필드 통계
+        const rulesWithAstDescription = Array.from(this.contextualRules.values())
+          .filter(r => r.astDescription).length;
+        const llmWithAstRules = Array.from(this.contextualRules.values())
+          .filter(r => r.checkType === 'llm_with_ast').length;
+
         logger.info(`  📊 가이드라인 분류 완료:`);
         logger.info(`     - 컨텍스트(LLM): ${this.contextualRules.size}개`);
         logger.info(`     - 정적(SonarQube): ${this.staticRules.size}개`);
         logger.info(`     - tagCondition 보유: ${rulesWithTagCondition}개`);
+        logger.info(`     - 🆕 llm_with_ast: ${llmWithAstRules}개`);
+        logger.info(`     - 🆕 astDescription 보유: ${rulesWithAstDescription}개`);
       } else {
         logger.warn('  ⚠️ VectorDB에서 가이드라인을 찾을 수 없습니다');
         this.loadDefaultContextualRules();
@@ -310,10 +356,10 @@ export class DevelopmentGuidelineChecker {
     });
 
     // Java 관련 키워드 우선
-    const javaKeywords = ['class', 'method', 'public', 'private', 'static', 
-                          'void', 'String', 'int', 'LData', 'LMultiData',
-                          'try', 'catch', 'Exception', 'throw', 'Controller',
-                          'Service', 'Repository', 'Transactional'];
+    const javaKeywords = ['class', 'method', 'public', 'private', 'static',
+      'void', 'String', 'int', 'LData', 'LMultiData',
+      'try', 'catch', 'Exception', 'throw', 'Controller',
+      'Service', 'Repository', 'Transactional'];
     javaKeywords.forEach(kw => {
       if (text.toLowerCase().includes(kw.toLowerCase())) {
         keywords.add(kw);
@@ -353,13 +399,13 @@ export class DevelopmentGuidelineChecker {
     if (!options.skipContextual) {
       const useUnified = options.useUnifiedPrompt !== false; // 기본: true
       const useTagFiltering = options.useTagFiltering !== false && this.tagFilteringEnabled; // 기본: true
-      
+
       let contextualViolations;
 
       if (useTagFiltering) {
         // v3.0: 태그 기반 필터링 방식
         contextualViolations = await this.checkContextualRulesWithTags(
-          sourceCode, 
+          sourceCode,
           astAnalysis,
           { useUnifiedPrompt: useUnified }
         );
@@ -370,7 +416,7 @@ export class DevelopmentGuidelineChecker {
         // 기존 배치 방식 (폴백)
         contextualViolations = await this.checkContextualRulesBatch(sourceCode);
       }
-      
+
       violations.push(...contextualViolations);
     }
 
@@ -424,7 +470,7 @@ export class DevelopmentGuidelineChecker {
       enableTier2: true,
       includeCompound: true
     });
-    
+
     logger.info(`    → 추출된 태그: ${profile.tags.size}개 (위험도: ${profile.riskLevel})`);
 
     // Step 2: 규칙 배열로 변환
@@ -440,7 +486,7 @@ export class DevelopmentGuidelineChecker {
     const tagFilteredRules = matchResult.violations;
     this.filteringStats.tagFiltered++;
 
-    logger.info(`    → 태그 매칭 결과: ${allRules.length}개 → ${tagFilteredRules.length}개 (${((1 - tagFilteredRules.length/allRules.length) * 100).toFixed(0)}% 감소)`);
+    logger.info(`    → 태그 매칭 결과: ${allRules.length}개 → ${tagFilteredRules.length}개 (${((1 - tagFilteredRules.length / allRules.length) * 100).toFixed(0)}% 감소)`);
 
     // Step 4: 추가 keywords 필터링 (tagCondition 없는 규칙용)
     const rulesWithoutTagCondition = allRules.filter(r => !r.tagCondition);
@@ -499,9 +545,9 @@ export class DevelopmentGuidelineChecker {
 - 위험 수준: ${profile.riskLevel}
 - 카테고리: ${profile.categories.join(', ') || '없음'}
 - 복합 태그: ${Object.entries(profile.compoundTags)
-    .filter(([_, v]) => v.matched)
-    .map(([k, _]) => k)
-    .join(', ') || '없음'}
+        .filter(([_, v]) => v.matched)
+        .map(([k, _]) => k)
+        .join(', ') || '없음'}
 `;
 
     const prompt = this.buildUnifiedPromptWithProfile(sourceCode, rules, astAnalysis, profileSummary);
@@ -564,7 +610,7 @@ export class DevelopmentGuidelineChecker {
       const goodEx = rule.examples?.good?.[0] || '';
       const badEx = rule.examples?.bad?.[0] || '';
       const tagInfo = rule.tagCondition ? `\n- **매칭 조건**: \`${rule.tagCondition}\`` : '';
-      
+
       return `
 ### ${idx + 1}. ${rule.title} [${rule.ruleId}]
 - **심각도**: ${rule.severity}
@@ -618,9 +664,9 @@ JSON만 출력하세요.`;
   logFilteringStats() {
     if (this.filteringStats.totalChecks % 10 === 0) {
       logger.debug(`[필터링 통계] 총 검사: ${this.filteringStats.totalChecks}, ` +
-                   `키워드: ${this.filteringStats.keywordFiltered}, ` +
-                   `태그: ${this.filteringStats.tagFiltered}, ` +
-                   `LLM 호출: ${this.filteringStats.llmCalls}`);
+        `키워드: ${this.filteringStats.keywordFiltered}, ` +
+        `태그: ${this.filteringStats.tagFiltered}, ` +
+        `LLM 호출: ${this.filteringStats.llmCalls}`);
     }
   }
 
@@ -653,7 +699,7 @@ JSON만 출력하세요.`;
 
     try {
       this.filteringStats.llmCalls++;
-      
+
       // LLM 호출 (가이드 해석 전용 모델)
       const response = await this.llmService.generateCompletion(prompt, {
         model: this.guidelineModel,
@@ -664,7 +710,7 @@ JSON만 출력하세요.`;
       // 응답 파싱
       const violations = this.parseUnifiedResponse(response, applicableRules);
       logger.info(`    통합 검사 완료: ${violations.length}개 위반 발견`);
-      
+
       return violations;
     } catch (error) {
       logger.warn(`    통합 검사 실패: ${error.message}, 배치 방식으로 폴백`);
@@ -688,7 +734,7 @@ JSON만 출력하세요.`;
     const rulesText = rules.map((rule, idx) => {
       const goodEx = rule.examples?.good?.[0] || '';
       const badEx = rule.examples?.bad?.[0] || '';
-      
+
       return `
 ### ${idx + 1}. ${rule.title} [${rule.ruleId}]
 - **심각도**: ${rule.severity}
@@ -744,15 +790,15 @@ JSON만 출력하세요.`;
       // JSON 추출
       const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
       const jsonStr = jsonMatch ? jsonMatch[1] : response;
-      
+
       const cleaned = jsonStr.replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
       if (parsed.violations && Array.isArray(parsed.violations)) {
         for (const v of parsed.violations) {
           // 규칙 ID 매핑
-          const rule = applicableRules.find(r => 
-            r.ruleId === v.ruleId || 
+          const rule = applicableRules.find(r =>
+            r.ruleId === v.ruleId ||
             r.title === v.title
           );
 
@@ -785,7 +831,7 @@ JSON만 출력하세요.`;
     this.filteringStats.keywordFiltered++;
 
     const violations = [];
-    
+
     // 적용 가능한 규칙 필터링
     const applicableRules = this.filterApplicableRules(sourceCode);
     if (applicableRules.length === 0) {
@@ -860,7 +906,7 @@ JSON만 출력하세요.`;
     const rulesDescription = rules.map(rule => {
       const goodExamples = rule.examples?.good || [];
       const badExamples = rule.examples?.bad || [];
-      
+
       return `
 ### ${rule.title} (${rule.ruleId})
 ${rule.description || ''}
@@ -919,7 +965,7 @@ ${rulesDescription}
     try {
       const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
       const jsonStr = jsonMatch ? jsonMatch[1] : response;
-      
+
       const cleaned = jsonStr.replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
@@ -927,7 +973,7 @@ ${rulesDescription}
         for (const v of parsed.violations) {
           if (v.violation === true || v.violation === undefined) {
             const rule = rules.find(r => r.ruleId === v.ruleId);
-            
+
             violations.push({
               ruleId: v.ruleId || 'UNKNOWN',
               title: v.title || rule?.title || '',
@@ -985,7 +1031,7 @@ ${badExamples.length > 0 ? badExamples.map(ex => `- ${ex}`).join('\n') : '- (없
 JSON만 출력하세요.`;
 
     this.filteringStats.llmCalls++;
-    
+
     const response = await this.llmService.generateCompletion(prompt, {
       model: this.guidelineModel,
       temperature: 0.1,
@@ -1004,7 +1050,7 @@ JSON만 출력하세요.`;
     try {
       const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
       const jsonStr = jsonMatch ? jsonMatch[1] : response;
-      
+
       const cleaned = jsonStr.replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
@@ -1035,11 +1081,11 @@ JSON만 출력하세요.`;
     if (code.length <= maxLength) {
       return code;
     }
-    
+
     const half = Math.floor(maxLength / 2);
     const start = code.substring(0, half);
     const end = code.substring(code.length - half);
-    
+
     return `${start}\n\n// ... (${code.length - maxLength} characters truncated) ...\n\n${end}`;
   }
 

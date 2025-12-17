@@ -104,7 +104,7 @@
  * # PERFORMANCE: 검색 결과 캐싱 (동일 쿼리 반복 시, TTL 5분)
  * # PERFORMANCE: 인덱스 최적화 (HNSW M=16, EF=200 권장)
  */
-import { config } from '../config.js';
+import { config } from '../config/config.js';
 import { WeaviateAdapter } from './adapters/weaviateAdapter.js';
 import { QdrantAdapter } from './adapters/qdrantAdapter.js';
 import logger from '../utils/loggerUtils.js'

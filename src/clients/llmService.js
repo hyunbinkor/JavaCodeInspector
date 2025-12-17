@@ -7,7 +7,7 @@
  * 3. 하위 호환성 유지 (기존 코드 영향 최소화)
  */
 
-import { config } from '../config.js';
+import { config } from '../config/config.js';
 import { LLMAbstractionLayer } from './llmAbstractionLayer.js';
 import logger from '../utils/loggerUtils.js';
 

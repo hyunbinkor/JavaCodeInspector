@@ -22,7 +22,7 @@
  * @module LLMAbstractionLayer
  */
 
-import { config } from '../config.js';
+import { config } from '../config/config.js';
 import logger from '../utils/loggerUtils.js';
 
 export class LLMAbstractionLayer {

@@ -1,0 +1,469 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AST Node Mappings for LLM Conversion",
+    "description": "AST 노드 타입, 검사 조건, 명명 패턴을 자연어로 변환하기 위한 매핑 정의",
+    "version": "1.0.0",
+  
+    "nodeTypes": {
+      "_comment": "Java AST 노드 타입 → 한글 설명 매핑",
+      
+      "ClassDeclaration": {
+        "name": "클래스 선언",
+        "description": "클래스 정의 부분",
+        "examples": ["public class UserService { ... }"],
+        "relatedChecks": ["naming", "structure", "annotation"]
+      },
+      "InterfaceDeclaration": {
+        "name": "인터페이스 선언",
+        "description": "인터페이스 정의 부분",
+        "examples": ["public interface UserRepository { ... }"],
+        "relatedChecks": ["naming", "method_signature"]
+      },
+      "EnumDeclaration": {
+        "name": "열거형 선언",
+        "description": "enum 타입 정의 부분",
+        "examples": ["public enum Status { ACTIVE, INACTIVE }"],
+        "relatedChecks": ["naming", "values"]
+      },
+      "MethodDeclaration": {
+        "name": "메서드 선언",
+        "description": "메서드 정의 부분",
+        "examples": ["public void processOrder(Order order) { ... }"],
+        "relatedChecks": ["naming", "parameters", "return_type", "body_length", "complexity"]
+      },
+      "ConstructorDeclaration": {
+        "name": "생성자",
+        "description": "클래스 생성자 정의",
+        "examples": ["public UserService(UserRepository repo) { ... }"],
+        "relatedChecks": ["parameters", "initialization"]
+      },
+      "FieldDeclaration": {
+        "name": "필드 선언",
+        "description": "클래스 멤버 변수 정의",
+        "examples": ["private final UserRepository userRepository;"],
+        "relatedChecks": ["naming", "visibility", "initialization", "annotation"]
+      },
+      "VariableDeclaration": {
+        "name": "변수 선언",
+        "description": "지역 변수 정의",
+        "examples": ["LData custInfo = new LData();"],
+        "relatedChecks": ["naming", "initialization", "type"]
+      },
+      "VariableDeclarator": {
+        "name": "변수 선언",
+        "description": "변수 선언부",
+        "examples": ["String name = \"value\""],
+        "relatedChecks": ["naming", "initialization"]
+      },
+      "LocalVariableDeclaration": {
+        "name": "지역 변수 선언",
+        "description": "메서드 내부 지역 변수",
+        "examples": ["int count = 0;"],
+        "relatedChecks": ["naming", "scope"]
+      },
+      "Parameter": {
+        "name": "파라미터",
+        "description": "메서드/생성자의 매개변수",
+        "examples": ["String userId", "Order order"],
+        "relatedChecks": ["naming", "type", "annotation"]
+      },
+  
+      "IfStatement": {
+        "name": "if 조건문",
+        "description": "조건 분기 처리",
+        "examples": ["if (user != null) { ... }"],
+        "relatedChecks": ["condition", "body", "else_branch", "nesting"]
+      },
+      "ForStatement": {
+        "name": "for 반복문",
+        "description": "for 루프",
+        "examples": ["for (int i = 0; i < list.size(); i++) { ... }"],
+        "relatedChecks": ["body", "nesting", "complexity"]
+      },
+      "ForEachStatement": {
+        "name": "향상된 for문",
+        "description": "for-each 루프",
+        "examples": ["for (User user : users) { ... }"],
+        "relatedChecks": ["body", "variable_naming"]
+      },
+      "WhileStatement": {
+        "name": "while 반복문",
+        "description": "while 루프",
+        "examples": ["while (hasNext()) { ... }"],
+        "relatedChecks": ["condition", "body", "termination"]
+      },
+      "DoStatement": {
+        "name": "do-while 반복문",
+        "description": "do-while 루프",
+        "examples": ["do { ... } while (condition);"],
+        "relatedChecks": ["body", "condition"]
+      },
+      "SwitchStatement": {
+        "name": "switch 문",
+        "description": "다중 분기 처리",
+        "examples": ["switch (status) { case ACTIVE: ... }"],
+        "relatedChecks": ["cases", "default", "break"]
+      },
+      "SwitchExpression": {
+        "name": "switch 표현식",
+        "description": "Java 14+ switch 표현식",
+        "examples": ["var result = switch (x) { case 1 -> \"one\"; };"],
+        "relatedChecks": ["cases", "exhaustiveness"]
+      },
+  
+      "TryStatement": {
+        "name": "try 블록",
+        "description": "예외 처리 try 문",
+        "examples": ["try { ... } catch (Exception e) { ... }"],
+        "relatedChecks": ["resources", "catch_blocks", "finally"]
+      },
+      "CatchClause": {
+        "name": "catch 블록",
+        "description": "예외를 잡는 catch 절",
+        "examples": ["catch (SQLException e) { logger.error(e); }"],
+        "relatedChecks": ["exception_type", "body", "logging", "rethrow"]
+      },
+      "FinallyBlock": {
+        "name": "finally 블록",
+        "description": "항상 실행되는 finally 절",
+        "examples": ["finally { connection.close(); }"],
+        "relatedChecks": ["resource_cleanup", "body"]
+      },
+      "ThrowStatement": {
+        "name": "throw 문",
+        "description": "예외 발생",
+        "examples": ["throw new IllegalArgumentException(\"Invalid input\");"],
+        "relatedChecks": ["exception_type", "message"]
+      },
+      "TryWithResources": {
+        "name": "try-with-resources",
+        "description": "자동 리소스 관리 try 문",
+        "examples": ["try (Connection conn = getConnection()) { ... }"],
+        "relatedChecks": ["resources", "autocloseable"]
+      },
+  
+      "ReturnStatement": {
+        "name": "return 문",
+        "description": "메서드 반환",
+        "examples": ["return result;", "return null;"],
+        "relatedChecks": ["value", "null_return", "early_return"]
+      },
+      "BreakStatement": {
+        "name": "break 문",
+        "description": "루프/switch 탈출",
+        "examples": ["break;", "break outerLoop;"],
+        "relatedChecks": ["label"]
+      },
+      "ContinueStatement": {
+        "name": "continue 문",
+        "description": "다음 반복으로 건너뛰기",
+        "examples": ["continue;"],
+        "relatedChecks": ["label"]
+      },
+  
+      "MethodInvocation": {
+        "name": "메서드 호출",
+        "description": "메서드를 호출하는 부분",
+        "examples": ["userService.findById(userId)"],
+        "relatedChecks": ["target", "arguments", "null_check"]
+      },
+      "ObjectCreation": {
+        "name": "객체 생성",
+        "description": "new 키워드로 객체 생성",
+        "examples": ["new ArrayList<>()", "new User(name)"],
+        "relatedChecks": ["type", "arguments"]
+      },
+      "Assignment": {
+        "name": "할당문",
+        "description": "변수에 값 할당",
+        "examples": ["user = findUser(id);"],
+        "relatedChecks": ["target", "value"]
+      },
+  
+      "Annotation": {
+        "name": "어노테이션",
+        "description": "클래스/메서드/필드에 붙은 어노테이션",
+        "examples": ["@Override", "@Transactional", "@Autowired"],
+        "relatedChecks": ["type", "attributes"]
+      },
+      "MarkerAnnotation": {
+        "name": "마커 어노테이션",
+        "description": "속성 없는 어노테이션",
+        "examples": ["@Override", "@Deprecated"],
+        "relatedChecks": ["presence"]
+      },
+      "SingleMemberAnnotation": {
+        "name": "단일 속성 어노테이션",
+        "description": "속성 하나인 어노테이션",
+        "examples": ["@Service(\"userService\")"],
+        "relatedChecks": ["value"]
+      },
+      "NormalAnnotation": {
+        "name": "일반 어노테이션",
+        "description": "여러 속성을 가진 어노테이션",
+        "examples": ["@RequestMapping(value = \"/users\", method = GET)"],
+        "relatedChecks": ["attributes"]
+      },
+  
+      "BlockComment": {
+        "name": "블록 주석",
+        "description": "/* */ 형태의 주석",
+        "examples": ["/* 이 메서드는 ... */"],
+        "relatedChecks": ["content", "placement"]
+      },
+      "LineComment": {
+        "name": "라인 주석",
+        "description": "// 형태의 주석",
+        "examples": ["// 사용자 조회"],
+        "relatedChecks": ["content"]
+      },
+      "JavadocComment": {
+        "name": "Javadoc 주석",
+        "description": "/** */ 형태의 문서화 주석",
+        "examples": ["/** @param userId 사용자 ID */"],
+        "relatedChecks": ["tags", "description", "params", "return"]
+      }
+    },
+  
+    "checkConditions": {
+      "_comment": "검사 조건 → 자연어 설명 매핑",
+  
+      "checkEmpty": {
+        "true": {
+          "description": "해당 블록이 비어있으면 위반입니다",
+          "detail": "블록 내부에 최소 하나 이상의 statement가 있어야 합니다",
+          "checkPoint": "블록 내부에 실행 코드가 있는가?"
+        },
+        "false": {
+          "description": "해당 블록이 비어있어야 합니다",
+          "detail": "블록 내부에 코드가 없어야 합니다",
+          "checkPoint": "블록이 비어있는가?"
+        }
+      },
+  
+      "minBodyStatements": {
+        "description": "블록 내부에 최소 {value}개 이상의 statement가 필요합니다",
+        "detail": "단순히 비어있지 않은 것뿐 아니라, 의미 있는 처리가 있어야 합니다",
+        "checkPoint": "블록에 {value}개 이상의 statement가 있는가?"
+      },
+  
+      "maxBodyStatements": {
+        "description": "블록 내부 statement가 {value}개를 초과하면 위반입니다",
+        "detail": "블록이 너무 길어지면 가독성이 떨어지고 유지보수가 어려워집니다",
+        "checkPoint": "블록의 statement 수가 {value}개 이하인가?"
+      },
+  
+      "maxLineCount": {
+        "description": "코드가 {value}줄을 초과하면 위반입니다",
+        "detail": "메서드나 클래스가 너무 길면 분리를 고려해야 합니다",
+        "checkPoint": "코드 라인 수가 {value}줄 이하인가?"
+      },
+  
+      "maxCyclomaticComplexity": {
+        "description": "순환 복잡도가 {value}를 초과하면 위반입니다",
+        "detail": "조건문, 반복문이 많아 복잡도가 높으면 테스트와 유지보수가 어렵습니다",
+        "checkPoint": "순환 복잡도가 {value} 이하인가?"
+      },
+  
+      "maxNestingDepth": {
+        "description": "중첩 깊이가 {value}를 초과하면 위반입니다",
+        "detail": "if, for, while 등의 중첩이 깊으면 가독성이 크게 떨어집니다",
+        "checkPoint": "중첩 깊이가 {value} 이하인가?"
+      },
+  
+      "maxParameters": {
+        "description": "파라미터가 {value}개를 초과하면 위반입니다",
+        "detail": "파라미터가 많으면 객체로 묶거나 빌더 패턴을 고려해야 합니다",
+        "checkPoint": "파라미터 수가 {value}개 이하인가?"
+      },
+  
+      "requiresLogging": {
+        "true": {
+          "description": "해당 블록에서 반드시 로깅을 해야 합니다",
+          "detail": "logger.info(), logger.error() 등의 로깅 호출이 필요합니다",
+          "checkPoint": "로깅 코드가 포함되어 있는가?"
+        }
+      },
+  
+      "requiresNullCheck": {
+        "true": {
+          "description": "null 체크가 필요합니다",
+          "detail": "NullPointerException을 방지하기 위해 null 검사가 있어야 합니다",
+          "checkPoint": "null 체크를 수행하고 있는가?"
+        }
+      },
+  
+      "forbiddenInBlock": {
+        "description": "해당 블록 내에서 {value}을(를) 사용하면 위반입니다",
+        "detail": "특정 패턴이나 호출이 금지되어 있습니다",
+        "checkPoint": "{value}을(를) 사용하고 있지 않은가?"
+      },
+  
+      "requiredInBlock": {
+        "description": "해당 블록 내에서 반드시 {value}이(가) 있어야 합니다",
+        "detail": "특정 패턴이나 호출이 필수입니다",
+        "checkPoint": "{value}이(가) 포함되어 있는가?"
+      },
+  
+      "mustExtend": {
+        "description": "반드시 {value} 클래스를 상속해야 합니다",
+        "detail": "특정 베이스 클래스 상속이 필수입니다",
+        "checkPoint": "{value}을(를) 상속하고 있는가?"
+      },
+  
+      "mustImplement": {
+        "description": "반드시 {value} 인터페이스를 구현해야 합니다",
+        "detail": "특정 인터페이스 구현이 필수입니다",
+        "checkPoint": "{value}을(를) 구현하고 있는가?"
+      }
+    },
+  
+    "namingPatterns": {
+      "_comment": "명명 패턴 → 자연어 설명 매핑",
+  
+      "PascalCase": {
+        "description": "PascalCase 명명 규칙을 따라야 합니다",
+        "detail": "첫 글자 대문자, 단어 구분은 대문자로 (예: UserService, OrderController)",
+        "regex": "^[A-Z][a-zA-Z0-9]*$",
+        "checkPoint": "PascalCase 형식인가? (예: UserService)"
+      },
+      "camelCase": {
+        "description": "camelCase 명명 규칙을 따라야 합니다",
+        "detail": "첫 글자 소문자, 단어 구분은 대문자로 (예: userId, orderService)",
+        "regex": "^[a-z][a-zA-Z0-9]*$",
+        "checkPoint": "camelCase 형식인가? (예: userId)"
+      },
+      "UPPER_SNAKE_CASE": {
+        "description": "UPPER_SNAKE_CASE 명명 규칙을 따라야 합니다",
+        "detail": "모두 대문자, 단어 구분은 언더스코어로 (예: MAX_SIZE, DEFAULT_VALUE)",
+        "regex": "^[A-Z][A-Z0-9_]*$",
+        "checkPoint": "UPPER_SNAKE_CASE 형식인가? (예: MAX_SIZE)"
+      },
+      "snake_case": {
+        "description": "snake_case 명명 규칙을 따라야 합니다",
+        "detail": "모두 소문자, 단어 구분은 언더스코어로 (예: user_id)",
+        "regex": "^[a-z][a-z0-9_]*$",
+        "checkPoint": "snake_case 형식인가? (예: user_id)"
+      },
+  
+      "prefixWith": {
+        "description": "{value} 접두사로 시작해야 합니다",
+        "detail": "특정 접두사가 필수입니다",
+        "checkPoint": "{value}로 시작하는가?"
+      },
+      "suffixWith": {
+        "description": "{value} 접미사로 끝나야 합니다",
+        "detail": "특정 접미사가 필수입니다",
+        "checkPoint": "{value}로 끝나는가?"
+      },
+      "contains": {
+        "description": "이름에 {value}이(가) 포함되어야 합니다",
+        "detail": "특정 문자열 포함이 필수입니다",
+        "checkPoint": "{value}이(가) 포함되어 있는가?"
+      },
+      "notContains": {
+        "description": "이름에 {value}이(가) 포함되면 안 됩니다",
+        "detail": "특정 문자열 사용이 금지됩니다",
+        "checkPoint": "{value}이(가) 포함되어 있지 않은가?"
+      },
+      "matchesRegex": {
+        "description": "이름이 정규식 {value}에 매칭되어야 합니다",
+        "detail": "특정 패턴을 따라야 합니다",
+        "checkPoint": "명명 규칙 패턴에 맞는가?"
+      }
+    },
+  
+    "requiredAnnotations": {
+      "_comment": "필수 어노테이션 매핑",
+  
+      "@Override": {
+        "description": "@Override 어노테이션이 필요합니다",
+        "detail": "오버라이드하는 메서드는 @Override를 명시해야 합니다",
+        "checkPoint": "@Override 어노테이션이 있는가?"
+      },
+      "@Transactional": {
+        "description": "@Transactional 어노테이션이 필요합니다",
+        "detail": "트랜잭션 처리가 필요한 메서드입니다",
+        "checkPoint": "@Transactional 어노테이션이 있는가?"
+      },
+      "@Autowired": {
+        "description": "@Autowired 어노테이션이 필요합니다",
+        "detail": "의존성 주입이 필요한 필드입니다",
+        "checkPoint": "@Autowired 어노테이션이 있는가?"
+      },
+      "@Service": {
+        "description": "@Service 어노테이션이 필요합니다",
+        "detail": "Service 계층 클래스입니다",
+        "checkPoint": "@Service 어노테이션이 있는가?"
+      },
+      "@Repository": {
+        "description": "@Repository 어노테이션이 필요합니다",
+        "detail": "Repository 계층 클래스입니다",
+        "checkPoint": "@Repository 어노테이션이 있는가?"
+      },
+      "@Controller": {
+        "description": "@Controller 어노테이션이 필요합니다",
+        "detail": "Controller 계층 클래스입니다",
+        "checkPoint": "@Controller 어노테이션이 있는가?"
+      },
+      "@RestController": {
+        "description": "@RestController 어노테이션이 필요합니다",
+        "detail": "REST API Controller 클래스입니다",
+        "checkPoint": "@RestController 어노테이션이 있는가?"
+      }
+    },
+  
+    "exceptionTypes": {
+      "_comment": "예외 타입별 처리 가이드",
+  
+      "Exception": {
+        "description": "일반 Exception",
+        "handling": "구체적인 예외 타입으로 잡는 것을 권장합니다",
+        "checkPoint": "너무 광범위한 Exception을 잡고 있지 않은가?"
+      },
+      "RuntimeException": {
+        "description": "런타임 예외",
+        "handling": "명시적 catch가 필수는 아니지만, 필요시 처리해야 합니다",
+        "checkPoint": "RuntimeException 처리가 적절한가?"
+      },
+      "SQLException": {
+        "description": "SQL 관련 예외",
+        "handling": "DB 연결 문제, 쿼리 오류 등을 처리해야 합니다",
+        "checkPoint": "SQLException을 적절히 처리하고 있는가?"
+      },
+      "IOException": {
+        "description": "입출력 예외",
+        "handling": "파일, 네트워크 I/O 오류를 처리해야 합니다",
+        "checkPoint": "IOException을 적절히 처리하고 있는가?"
+      },
+      "NullPointerException": {
+        "description": "널 포인터 예외",
+        "handling": "catch보다는 사전 null 체크로 방지해야 합니다",
+        "checkPoint": "NullPointerException을 catch하지 않고 사전에 방지하고 있는가?"
+      }
+    },
+  
+    "contextualHints": {
+      "_comment": "문맥별 추가 설명",
+  
+      "emptyBlock": {
+        "CatchClause": "예외를 잡아놓고 아무 처리도 하지 않으면 문제 원인을 파악하기 어렵습니다. 최소한 로깅이라도 해야 합니다.",
+        "IfStatement": "조건만 있고 처리가 없으면 불필요한 코드입니다. 의도적이라면 주석을 추가하세요.",
+        "ForStatement": "빈 반복문은 무한 루프나 버그의 원인이 될 수 있습니다.",
+        "MethodDeclaration": "빈 메서드는 구현이 누락된 것일 수 있습니다. 의도적이라면 주석이나 TODO를 추가하세요."
+      },
+  
+      "tooLong": {
+        "MethodDeclaration": "메서드가 너무 길면 단일 책임 원칙(SRP)을 위반할 가능성이 높습니다. 작은 메서드로 분리하세요.",
+        "ClassDeclaration": "클래스가 너무 크면 응집도가 낮을 수 있습니다. 역할별로 분리를 고려하세요."
+      },
+  
+      "highComplexity": {
+        "MethodDeclaration": "복잡도가 높으면 버그 발생 확률이 높고 테스트가 어렵습니다. 조건문을 단순화하거나 메서드를 분리하세요."
+      },
+  
+      "deepNesting": {
+        "default": "중첩이 깊으면 코드 흐름을 이해하기 어렵습니다. early return, guard clause 패턴을 사용하세요."
+      }
+    }
+  }

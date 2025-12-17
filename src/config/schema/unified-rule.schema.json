@@ -1,0 +1,339 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "unified-rule.schema.json",
+    "title": "UnifiedRule",
+    "description": "AST Rule과 Contextual Rule을 통합한 Unified Rule Schema",
+    "type": "object",
+    
+    "required": [
+      "ruleId",
+      "title", 
+      "description",
+      "category",
+      "severity",
+      "checkType"
+    ],
+    
+    "properties": {
+      
+      "ruleId": {
+        "type": "string",
+        "description": "규칙 고유 식별자",
+        "pattern": "^[A-Z]{2,5}-[0-9]{3}$",
+        "examples": ["AST-001", "CTX-001", "SEC-001", "ARCH-001"]
+      },
+      
+      "title": {
+        "type": "string",
+        "description": "규칙 제목 (한글 또는 영문, 100자 이내)",
+        "maxLength": 100,
+        "examples": ["빈 catch 블록 금지", "Controller에서 비즈니스 로직 분리"]
+      },
+      
+      "description": {
+        "type": "string",
+        "description": "규칙 상세 설명",
+        "maxLength": 500,
+        "examples": ["catch 블록에서 예외를 무시하지 말고 최소한 로깅을 수행해야 합니다"]
+      },
+      
+      "category": {
+        "type": "string",
+        "description": "규칙 카테고리",
+        "enum": [
+          "naming_convention",
+          "code_style",
+          "exception_handling",
+          "resource_management",
+          "security",
+          "architecture",
+          "performance",
+          "documentation",
+          "framework_specific"
+        ]
+      },
+      
+      "severity": {
+        "type": "string",
+        "description": "심각도 레벨",
+        "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+        "default": "MEDIUM"
+      },
+      
+      "checkType": {
+        "type": "string",
+        "description": "검사 방식",
+        "enum": [
+          "regex",
+          "ast",
+          "combined",
+          "llm_contextual",
+          "llm_with_ast"
+        ]
+      },
+      
+      "originalCheckType": {
+        "type": "string",
+        "description": "원래 checkType (마이그레이션 추적용). llm_with_ast로 변환된 경우 원래 타입 보존",
+        "enum": ["regex", "ast", "combined", "llm_contextual"],
+        "examples": ["ast"]
+      },
+      
+      "antiPatterns": {
+        "type": "array",
+        "description": "위반 패턴 정규식 배열 (regex/combined 타입용)",
+        "items": {
+          "type": "string"
+        },
+        "examples": [["catch\\s*\\([^)]*\\)\\s*\\{\\s*\\}"]]
+      },
+      
+      "goodPatterns": {
+        "type": "array",
+        "description": "올바른 패턴 정규식 배열 (regex/combined 타입용)",
+        "items": {
+          "type": "string"
+        },
+        "examples": [["catch\\s*\\([^)]*\\)\\s*\\{[^}]+"]]
+      },
+      
+      "astHints": {
+        "type": "object",
+        "description": "AST 검사 힌트 (ast/combined 타입용)",
+        "properties": {
+          "nodeTypes": {
+            "type": "array",
+            "description": "검사 대상 AST 노드 타입",
+            "items": {
+              "type": "string"
+            },
+            "examples": [["CatchClause", "MethodDeclaration"]]
+          },
+          "checkEmpty": {
+            "type": "boolean",
+            "description": "블록 비어있음 검사 여부",
+            "default": false
+          },
+          "minBodyStatements": {
+            "type": "integer",
+            "description": "최소 statement 개수",
+            "minimum": 0
+          },
+          "maxBodyStatements": {
+            "type": "integer",
+            "description": "최대 statement 개수",
+            "minimum": 1
+          },
+          "maxLineCount": {
+            "type": "integer",
+            "description": "최대 라인 수",
+            "minimum": 1
+          },
+          "namingPattern": {
+            "type": "string",
+            "description": "명명 규칙",
+            "enum": ["PascalCase", "camelCase", "UPPER_SNAKE_CASE", "snake_case"]
+          },
+          "requiredAnnotations": {
+            "type": "array",
+            "description": "필수 어노테이션",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forbiddenPatterns": {
+            "type": "array",
+            "description": "금지 패턴",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      
+      "astDescription": {
+        "type": "string",
+        "description": "AST 검사 기준의 자연어 설명 (LLM용). astHints가 있는 규칙에서 자동 생성 또는 수동 작성",
+        "examples": [
+          "검사 대상: catch 블록. 해당 블록이 비어있으면 위반입니다. 최소 1개 이상의 statement가 필요합니다."
+        ]
+      },
+      
+      "checkPoints": {
+        "type": "array",
+        "description": "LLM에게 제공할 체크포인트 목록. 순서대로 확인하면 위반 여부 판단 가능",
+        "items": {
+          "type": "string"
+        },
+        "examples": [
+          [
+            "catch 블록이 존재하는가?",
+            "catch 블록 내부에 코드가 있는가?",
+            "예외를 로깅하거나 처리하는 코드가 있는가?"
+          ]
+        ]
+      },
+      
+      "keywords": {
+        "type": "array",
+        "description": "규칙 적용 필터링용 키워드. 소스코드에 키워드가 있을 때만 규칙 적용",
+        "items": {
+          "type": "string"
+        },
+        "examples": [["catch", "try", "exception"]]
+      },
+      
+      "examples": {
+        "type": "object",
+        "description": "코드 예시",
+        "properties": {
+          "bad": {
+            "type": "array",
+            "description": "나쁜 예시 코드",
+            "items": {
+              "type": "string"
+            }
+          },
+          "good": {
+            "type": "array",
+            "description": "좋은 예시 코드",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "examples": [
+          {
+            "bad": ["try {\n  riskyOperation();\n} catch (Exception e) {\n  // 아무것도 안 함\n}"],
+            "good": ["try {\n  riskyOperation();\n} catch (Exception e) {\n  logger.error(\"Error\", e);\n}"]
+          }
+        ]
+      },
+      
+      "tagCondition": {
+        "type": "object",
+        "description": "태그 기반 필터링 조건",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "description": "태그 논리식 (&&, ||, !, () 지원)",
+            "examples": ["IS_CONTROLLER && HAS_DB_CALL", "HAS_TRY && HAS_CATCH"]
+          },
+          "description": {
+            "type": "string",
+            "description": "조건 설명"
+          }
+        },
+        "required": ["expression"]
+      },
+      
+      "prerequisite": {
+        "type": "object",
+        "description": "검사 전제 조건. 이 조건이 만족될 때만 규칙 검사 수행",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "description": "전제 조건 태그 논리식"
+          },
+          "description": {
+            "type": "string",
+            "description": "전제 조건 설명"
+          }
+        },
+        "required": ["expression"]
+      },
+      
+      "message": {
+        "type": "string",
+        "description": "위반 시 표시할 메시지",
+        "maxLength": 200,
+        "examples": ["빈 catch 블록이 발견되었습니다"]
+      },
+      
+      "suggestion": {
+        "type": "string",
+        "description": "개선 제안",
+        "maxLength": 300,
+        "examples": ["예외를 로깅하거나 적절히 처리하세요"]
+      },
+      
+      "isActive": {
+        "type": "boolean",
+        "description": "규칙 활성화 여부",
+        "default": true
+      },
+      
+      "metadata": {
+        "type": "object",
+        "description": "추가 메타데이터",
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "생성 일시"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "수정 일시"
+          },
+          "source": {
+            "type": "string",
+            "description": "규칙 출처 (가이드라인 문서 섹션 등)",
+            "examples": ["개발가이드 2.3.1절"]
+          },
+          "version": {
+            "type": "string",
+            "description": "규칙 버전"
+          }
+        }
+      }
+    },
+    
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "checkType": { "const": "llm_with_ast" }
+          },
+          "required": ["checkType"]
+        },
+        "then": {
+          "required": ["astDescription"],
+          "properties": {
+            "astDescription": {
+              "minLength": 10
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "checkType": { "enum": ["regex", "combined"] }
+          },
+          "required": ["checkType"]
+        },
+        "then": {
+          "anyOf": [
+            { "required": ["antiPatterns"] },
+            { "required": ["goodPatterns"] }
+          ]
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "checkType": { "enum": ["ast", "combined"] }
+          },
+          "required": ["checkType"]
+        },
+        "then": {
+          "required": ["astHints"]
+        }
+      }
+    ],
+    
+    "additionalProperties": false
+  }
