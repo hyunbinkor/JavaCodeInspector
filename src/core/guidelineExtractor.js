@@ -1,12 +1,13 @@
 /**
- * 가이드라인 추출기 V4.1 (순서 문제 해결)
+ * 가이드라인 추출기 V4.2 (checkType v4.0 스키마 적용)
  * 
- * V4.0 대비 변경사항:
- * 🔧 parseStringPromise 옵션 추가 (순서 보장)
- * 🔧 getOrderedBodyElements() 재작성 (body.$$ 사용)
- * 🔧 테이블/paragraph 파싱 시 $$ 구조 대응
+ * V4.1 대비 변경사항:
+ * 🔧 checkType 재구성: pure_regex, llm_with_regex, llm_contextual, llm_with_ast
+ * 🔧 checkType 결정 트리 프롬프트 개선
+ * 🔧 checkTypeReason 필드 추가
+ * 🔧 레거시 checkType 자동 변환
  * 
- * @version 4.1
+ * @version 4.2
  */
 
 import fs from 'fs/promises';
@@ -27,10 +28,24 @@ export class GuidelineExtractor {
     this.imageRelations = new Map();
     this.astHintsConverter = new AstHintsConverter();
     this.docxZip = null;
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🆕 v4.0: checkType 관련 설정
+    // ═══════════════════════════════════════════════════════════════════
+    this.validCheckTypes = ['pure_regex', 'llm_with_regex', 'llm_contextual', 'llm_with_ast'];
+
+    // 레거시 checkType 매핑 (v3.x → v4.0)
+    this.legacyCheckTypeMap = {
+      'regex': 'pure_regex',
+      'ast': 'llm_with_ast',
+      'combined': 'llm_with_regex',
+      'static_analysis': 'pure_regex',
+      'regex_with_validation': 'llm_with_regex'
+    };
   }
 
   async initialize() {
-    logger.info('🚀 가이드라인 추출기 V4.1 초기화 중...');
+    logger.info('🚀 가이드라인 추출기 V4.2 초기화 중...');
 
     const llmConnected = await this.llmService.checkConnection();
     if (!llmConnected) {
@@ -67,7 +82,7 @@ export class GuidelineExtractor {
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   async extractFromDOCX(docxPath) {
-    logger.info('📘 DOCX 파싱 시작 (V4.1 - 순서 보장)...');
+    logger.info('📘 DOCX 파싱 시작 (V4.2 - checkType v4.0)...');
 
     try {
       // Step 1: ZIP 로드
@@ -76,9 +91,7 @@ export class GuidelineExtractor {
 
       const documentXml = await this.docxZip.file('word/document.xml').async('string');
 
-      // ═══════════════════════════════════════════════════════════════════
-      // 🔧 V4.1 핵심 변경: 순서 보장 옵션 추가
-      // ═══════════════════════════════════════════════════════════════════
+      // 순서 보장 옵션
       const doc = await parseStringPromise(documentXml, {
         preserveChildrenOrder: true,
         explicitChildren: true,
@@ -181,14 +194,13 @@ export class GuidelineExtractor {
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 목차 파싱 (V4.1 - $$ 구조 대응)
+   * 목차 파싱 ($$ 구조 대응)
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   parseTableOfContents(body) {
     let tocStarted = false;
     let tocEnded = false;
 
-    // 🔧 V4.1: body.$$ 사용하여 순서대로 순회
     const children = body.$$ || [];
 
     for (const child of children) {
@@ -197,7 +209,6 @@ export class GuidelineExtractor {
       const tagName = child['#name'];
       if (tagName !== 'w:p') continue;
 
-      // $$ 구조에서 hyperlink 찾기
       const hyperlinks = this.findChildrenByName(child, 'w:hyperlink');
 
       if (hyperlinks.length === 0) {
@@ -221,7 +232,6 @@ export class GuidelineExtractor {
 
         if (!tocStarted) continue;
 
-        // pStyle 확인 ($$ 구조)
         const pPr = this.findChildByName(child, 'w:pPr');
         const pStyleNode = pPr ? this.findChildByName(pPr, 'w:pStyle') : null;
         const pStyle = pStyleNode?.$?.['w:val'];
@@ -247,7 +257,7 @@ export class GuidelineExtractor {
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * Bookmark 기반 섹션 추출 (V4.1 - 순서 보장)
+   * Bookmark 기반 섹션 추출 (순서 보장)
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   async extractSectionsByBookmarks(body) {
@@ -255,7 +265,6 @@ export class GuidelineExtractor {
     let currentSection = null;
     let skipUntilTocEnd = true;
 
-    // 🔧 V4.1 핵심: body.$$ 사용하여 원본 순서 유지
     const orderedElements = this.getOrderedBodyElements(body);
 
     logger.info(`📋 순서 보장 요소: ${orderedElements.length}개`);
@@ -272,12 +281,10 @@ export class GuidelineExtractor {
           if (tocEntry) {
             skipUntilTocEnd = false;
 
-            // 이전 섹션 저장
             if (currentSection && this.isValidSection(currentSection)) {
               sections.push(currentSection);
             }
 
-            // 새 섹션 시작
             currentSection = {
               level: tocEntry.level,
               sectionNumber: this.inferSectionNumber(tocEntry.title),
@@ -305,21 +312,18 @@ export class GuidelineExtractor {
         }
       }
 
-      // 🔧 V4.1: 테이블이 올바른 순서에서 현재 섹션에 연결됨
       else if (type === 'w:tbl') {
         if (skipUntilTocEnd) continue;
 
         if (currentSection) {
           currentSection.contentElements.push({ type: 'table', element });
 
-          // 🔧 상세 로그 추가
           const tblInfo = this.extractTableData(element);
           logger.info(`  📊 테이블 → "${currentSection.title.substring(0, 30)}" (${tblInfo.rows}×${tblInfo.cols})`);
         }
       }
     }
 
-    // 마지막 섹션 저장
     if (currentSection && this.isValidSection(currentSection)) {
       sections.push(currentSection);
     }
@@ -327,15 +331,9 @@ export class GuidelineExtractor {
     return sections;
   }
 
-  /**
-   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔧 V4.1 핵심 수정: body.$$ 사용하여 원본 순서 유지
-   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   */
   getOrderedBodyElements(body) {
     const elements = [];
 
-    // 🔧 V4.1: body.$$ 배열 사용 (순서 보장)
     if (body.$$) {
       for (const child of body.$$) {
         const tagName = child['#name'];
@@ -347,8 +345,7 @@ export class GuidelineExtractor {
       return elements;
     }
 
-    // 폴백 (순서 보장 안 됨 - 경고)
-    logger.warn('⚠️ body.$$ 없음 - 순서 보장 불가! parseStringPromise 옵션 확인 필요');
+    logger.warn('⚠️ body.$$ 없음 - 순서 보장 불가!');
 
     for (const [key, value] of Object.entries(body)) {
       if ((key === 'w:p' || key === 'w:tbl') && Array.isArray(value)) {
@@ -361,13 +358,9 @@ export class GuidelineExtractor {
     return elements;
   }
 
-  /**
-   * $$ 구조에서 bookmarkStart 찾기
-   */
   findBookmarkStarts(element) {
     const bookmarks = [];
 
-    // $$ 구조
     if (element.$$) {
       for (const child of element.$$) {
         if (child['#name'] === 'w:bookmarkStart') {
@@ -376,7 +369,6 @@ export class GuidelineExtractor {
       }
     }
 
-    // 기존 구조 (폴백)
     if (bookmarks.length === 0 && element['w:bookmarkStart']) {
       bookmarks.push(...element['w:bookmarkStart']);
     }
@@ -384,9 +376,6 @@ export class GuidelineExtractor {
     return bookmarks;
   }
 
-  /**
-   * $$ 구조에서 특정 이름의 자식 요소들 찾기
-   */
   findChildrenByName(element, name) {
     const children = [];
 
@@ -398,7 +387,6 @@ export class GuidelineExtractor {
       }
     }
 
-    // 폴백
     if (children.length === 0 && element[name]) {
       if (Array.isArray(element[name])) {
         children.push(...element[name]);
@@ -410,9 +398,6 @@ export class GuidelineExtractor {
     return children;
   }
 
-  /**
-   * $$ 구조에서 특정 이름의 자식 요소 하나 찾기
-   */
   findChildByName(element, name) {
     if (element.$$) {
       for (const child of element.$$) {
@@ -422,7 +407,6 @@ export class GuidelineExtractor {
       }
     }
 
-    // 폴백
     if (element[name]) {
       return Array.isArray(element[name]) ? element[name][0] : element[name];
     }
@@ -430,9 +414,6 @@ export class GuidelineExtractor {
     return null;
   }
 
-  /**
-   * $$ 구조에서 텍스트 추출
-   */
   extractTextFromElement(element) {
     const texts = [];
 
@@ -452,7 +433,6 @@ export class GuidelineExtractor {
 
     extractRecursive(element);
 
-    // 폴백: 기존 구조
     if (texts.length === 0) {
       const runs = element['w:r'] || [];
       for (const run of runs) {
@@ -468,9 +448,6 @@ export class GuidelineExtractor {
     return texts.join('');
   }
 
-  /**
-   * Paragraph에서 텍스트 추출 ($$ 구조 대응)
-   */
   extractTextFromParagraph(para) {
     return this.extractTextFromElement(para);
   }
@@ -522,13 +499,7 @@ export class GuidelineExtractor {
     return textLines.join('\n');
   }
 
-  /**
-   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 테이블 데이터 추출 ($$ 구조 대응)
-   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   */
   extractTableData(tableElement) {
-    // $$ 구조에서 w:tr 찾기
     let rows = this.findChildrenByName(tableElement, 'w:tr');
 
     if (rows.length === 0) {
@@ -538,12 +509,10 @@ export class GuidelineExtractor {
     const tableData = [];
 
     for (const row of rows) {
-      // $$ 구조에서 w:tc 찾기
       const cells = this.findChildrenByName(row, 'w:tc');
       const rowData = [];
 
       for (const cell of cells) {
-        // $$ 구조에서 w:p 찾기
         const cellParas = this.findChildrenByName(cell, 'w:p');
         const cellTexts = [];
 
@@ -562,7 +531,6 @@ export class GuidelineExtractor {
       tableData.push(rowData);
     }
 
-    // 1×1 텍스트박스 판단
     if (tableData.length === 1 && tableData[0].length === 1) {
       return {
         type: 'textbox',
@@ -587,16 +555,13 @@ export class GuidelineExtractor {
 
     const lines = [];
 
-    // 헤더 행
     const headerRow = tableData[0];
     const headerCells = headerRow.map(cell => cell.text || '');
     lines.push('| ' + headerCells.join(' | ') + ' |');
 
-    // 구분선
     const separator = headerCells.map(() => '---').join(' | ');
     lines.push('| ' + separator + ' |');
 
-    // 데이터 행
     for (let i = 1; i < tableData.length; i++) {
       const row = tableData[i];
       const cells = row.map(cell => cell.text || '');
@@ -606,15 +571,157 @@ export class GuidelineExtractor {
     return lines.join('\n');
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 v4.0: 가이드라인 분석 프롬프트 (checkType 결정 트리)
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /**
-   * Guideline 변환 (Checker 호환 버전)
+   * 가이드라인 분석 프롬프트 생성 (v4.0 - checkType 결정 트리)
    * 
-   * 수정 사항:
-   * - antiPatterns/goodPatterns 필드 추가
-   * - message 필드 추가
-   * - keywords 필드 추가 (llm_contextual용)
-   * - astHints 정규화
-   * - checkType 검증
+   * @param {string} ruleText - 규칙 원문
+   * @param {object} section - 섹션 정보
+   * @returns {string} LLM 프롬프트
+   */
+  createGuidelineAnalysisPrompt(ruleText, section) {
+    return `당신은 Java 코딩 가이드라인을 분석하여 자동 코드 검사 규칙으로 변환하는 전문가입니다.
+
+## 규칙 정보
+- 섹션: ${section.sectionNumber}
+- 제목: ${section.title}
+- Level: ${section.level}
+
+## 규칙 내용
+${ruleText}
+
+═══════════════════════════════════════════════════════════════════════════════
+## checkType 결정 가이드 (반드시 이 순서대로 판단하세요)
+═══════════════════════════════════════════════════════════════════════════════
+
+### Q1. 정규식만으로 100% 정확한 탐지가 가능한가?
+   예시: System.out.println 금지, e.printStackTrace() 금지, TODO/FIXME 주석
+   - 오탐(False Positive) 가능성이 없음
+   - 문맥 고려 없이 패턴 매칭만으로 위반 확정 가능
+   → YES: **pure_regex** (LLM 검증 불필요)
+   → NO: Q2로
+
+### Q2. 정규식으로 후보 탐지 가능하나, 오탐 가능성이 있는가?
+   예시: 빈 catch 블록 (의도적 무시 vs 실수), finally 내 close() (try-with-resources 대체 가능?)
+   - 정규식으로 "의심 코드" 탐지 가능
+   - 하지만 문맥을 봐야 실제 위반인지 판단 가능
+   → YES: **llm_with_regex** (정규식 후보 → LLM 검증)
+   → NO: Q3로
+
+### Q3. 코드 구조(AST) 정보가 판단에 핵심적인가?
+   예시: 메서드 길이 초과, 순환 복잡도, 중첩 깊이, 파라미터 수
+   - 코드의 구조적 특성(깊이, 개수, 복잡도)을 분석해야 함
+   - AST 정보 + LLM 해석이 필요
+   → YES: **llm_with_ast** (AST 정보 + LLM 검증)
+   → NO: Q4로
+
+### Q4. 의미론적/비즈니스 로직 분석이 필요한가?
+   예시: Controller에서 비즈니스 로직 분리, 레이어 규칙, 트랜잭션 경계
+   - 코드의 "의미"나 "의도"를 파악해야 함
+   - 아키텍처/설계 패턴 관점의 분석 필요
+   → **llm_contextual** (태그/키워드 필터 → LLM 분석)
+
+═══════════════════════════════════════════════════════════════════════════════
+## 응답 형식 (JSON)
+═══════════════════════════════════════════════════════════════════════════════
+
+\`\`\`json
+{
+  "checkType": "pure_regex | llm_with_regex | llm_contextual | llm_with_ast",
+  "checkTypeReason": "위 결정 트리의 어느 단계에서 결정되었는지 1문장으로 설명",
+  
+  "enhancedDescription": "규칙에 대한 명확한 설명 (1-2문장)",
+  "message": "위반 시 개발자에게 보여줄 메시지 (한국어)",
+  
+  "antiPatterns": [
+    {
+      "pattern": "위반 후보를 탐지하는 정규식",
+      "flags": "g",
+      "description": "이 패턴이 매칭되면 위반 (또는 위반 후보)"
+    }
+  ],
+  
+  "goodPatterns": [
+    {
+      "pattern": "정상 코드 패턴 (예외 처리용)",
+      "flags": "g",
+      "description": "이 패턴이 있으면 위반 아님"
+    }
+  ],
+  
+  "keywords": ["코드에 있어야 규칙 적용할 키워드"],
+  
+  "tagCondition": "태그 조건식 (예: IS_CONTROLLER && HAS_DB_CALL)",
+  
+  "astHints": {
+    "nodeTypes": ["CatchClause", "MethodDeclaration"],
+    "checkConditions": ["확인할 조건"],
+    "maxLineCount": null,
+    "checkEmpty": false
+  },
+  
+  "examples": {
+    "good": ["올바른 코드 예시"],
+    "bad": ["잘못된 코드 예시"]
+  },
+  
+  "businessRules": ["관련 비즈니스 규칙"]
+}
+\`\`\`
+
+═══════════════════════════════════════════════════════════════════════════════
+## checkType별 필수/권장 필드
+═══════════════════════════════════════════════════════════════════════════════
+
+### pure_regex (정규식만으로 판정)
+- **필수**: antiPatterns 또는 goodPatterns (최소 1개)
+- 권장: message, examples
+
+### llm_with_regex (정규식 후보 → LLM 검증)
+- **필수**: antiPatterns (후보 탐지용)
+- 권장: keywords, examples, goodPatterns
+
+### llm_contextual (의미 분석)
+- **필수**: keywords 또는 tagCondition
+- 권장: examples, businessRules
+
+### llm_with_ast (AST + LLM)
+- **필수**: astHints (nodeTypes 또는 수치 조건)
+- 권장: keywords, examples
+
+═══════════════════════════════════════════════════════════════════════════════
+## 정규식 작성 가이드
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Java 코드에서 동작하는 정규식 작성
+2. 특수문자 이스케이프: \\\\., \\\\(, \\\\), \\\\[, \\\\]
+3. 너무 광범위한 패턴 금지: .*, .+, \\\\w+ 단독 사용 금지
+4. flags는 보통 "g" 사용
+
+예시:
+- System.out.println: "System\\\\.out\\\\.print(ln)?\\\\s*\\\\("
+- 빈 catch 블록: "catch\\\\s*\\\\([^)]*\\\\)\\\\s*\\\\{\\\\s*\\\\}"
+- e.printStackTrace(): "\\\\.printStackTrace\\\\s*\\\\(\\\\s*\\\\)"
+
+═══════════════════════════════════════════════════════════════════════════════
+## 주의사항
+═══════════════════════════════════════════════════════════════════════════════
+
+1. JSON만 출력하세요 (마크다운 코드블록 포함)
+2. checkTypeReason은 반드시 작성 (결정 과정 추적용)
+3. message는 한국어로 작성
+4. 확실하지 않으면 llm_contextual 선택 (가장 안전)`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 v4.0: Guideline 변환 (checkType v4.0 스키마)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Guideline 변환 (v4.0 - checkType 재구성)
    */
   async convertToGuideline(section) {
     try {
@@ -634,29 +741,35 @@ export class GuidelineExtractor {
       const category = this.inferCategory(section.title, ruleText);
       const ruleId = `${category}.${section.sectionNumber.replace(/\./g, '_')}`;
 
-      // ─────────────────────────────────────────────────────────
-      // checkType 검증 및 정규화
-      // ─────────────────────────────────────────────────────────
-      const validCheckTypes = ['regex', 'ast', 'combined', 'llm_contextual', 'llm_with_ast'];
-      let checkType = analysis.checkType || 'regex';
+      // ─────────────────────────────────────────────────────────────────────
+      // 🆕 v4.0: checkType 검증 및 정규화
+      // ─────────────────────────────────────────────────────────────────────
+      let checkType = analysis.checkType || 'llm_contextual';
+      let checkTypeReason = analysis.checkTypeReason || '';
+      let originalCheckType = null;
 
-      // 레거시 checkType 변환
-      if (checkType === 'static_analysis') checkType = 'regex';
-      if (checkType === 'regex_with_validation') checkType = 'combined';
-
-      // 유효하지 않으면 regex로 폴백
-      if (!validCheckTypes.includes(checkType)) {
-        console.warn(`  ⚠️ [${ruleId}] 유효하지 않은 checkType "${checkType}" → "regex"로 변경`);
-        checkType = 'regex';
+      // 레거시 checkType 변환 (v3.x → v4.0)
+      if (this.legacyCheckTypeMap[checkType]) {
+        originalCheckType = checkType;
+        checkType = this.legacyCheckTypeMap[checkType];
+        checkTypeReason = `레거시 변환: ${originalCheckType} → ${checkType}`;
+        logger.info(`  🔄 [${ruleId}] checkType 변환: ${originalCheckType} → ${checkType}`);
       }
 
-      // ─────────────────────────────────────────────────────────
+      // 유효하지 않으면 llm_contextual로 폴백
+      if (!this.validCheckTypes.includes(checkType)) {
+        logger.warn(`  ⚠️ [${ruleId}] 유효하지 않은 checkType "${checkType}" → "llm_contextual"로 변경`);
+        originalCheckType = checkType;
+        checkType = 'llm_contextual';
+        checkTypeReason = `유효하지 않은 checkType "${originalCheckType}"에서 폴백`;
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
       // antiPatterns / goodPatterns 처리
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
       let antiPatterns = [];
       let goodPatterns = [];
 
-      // 새 형식 (antiPatterns/goodPatterns)
       if (analysis.antiPatterns && Array.isArray(analysis.antiPatterns)) {
         antiPatterns = analysis.antiPatterns.map(p => this.validatePattern(p, ruleId)).filter(Boolean);
       }
@@ -680,14 +793,27 @@ export class GuidelineExtractor {
         }
       }
 
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
+      // 🆕 v4.0: checkType별 필수 조건 검증 및 자동 조정
+      // ─────────────────────────────────────────────────────────────────────
+      const adjustResult = this.validateAndAdjustCheckType(checkType, {
+        antiPatterns,
+        goodPatterns,
+        analysis,
+        ruleId
+      });
+      checkType = adjustResult.checkType;
+      if (adjustResult.reason) {
+        checkTypeReason = adjustResult.reason;
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
       // astHints 정규화
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
       let astHints = null;
       if (analysis.astHints && typeof analysis.astHints === 'object') {
         astHints = {};
 
-        // nodeTypes (복수형, 배열)
         if (analysis.astHints.nodeTypes && Array.isArray(analysis.astHints.nodeTypes)) {
           astHints.nodeTypes = analysis.astHints.nodeTypes;
         } else if (analysis.astHints.nodeType) {
@@ -696,41 +822,58 @@ export class GuidelineExtractor {
             : [analysis.astHints.nodeType];
         }
 
-        // checkConditions
         if (analysis.astHints.checkConditions && Array.isArray(analysis.astHints.checkConditions)) {
           astHints.checkConditions = analysis.astHints.checkConditions;
         } else if (analysis.astHints.checkPoints && Array.isArray(analysis.astHints.checkPoints)) {
           astHints.checkConditions = analysis.astHints.checkPoints;
         }
 
-        // 빈 객체면 null로
+        // 수치 조건 복사
+        ['maxLineCount', 'maxCyclomaticComplexity', 'maxNestingDepth', 'maxParameters', 'checkEmpty'].forEach(key => {
+          if (analysis.astHints[key] !== undefined) {
+            astHints[key] = analysis.astHints[key];
+          }
+        });
+
         if (Object.keys(astHints).length === 0) astHints = null;
       }
 
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
       // message 생성
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
       let message = analysis.message;
       if (!message || !message.trim()) {
         message = `${section.title} 규칙을 위반했습니다`;
       }
 
-      // ─────────────────────────────────────────────────────────
-      // keywords 처리 (llm_contextual 필수)
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
+      // keywords 처리
+      // ─────────────────────────────────────────────────────────────────────
       let keywords = [];
       if (analysis.keywords && Array.isArray(analysis.keywords)) {
         keywords = analysis.keywords.filter(k => typeof k === 'string' && k.trim());
       }
 
-      // llm_contextual인데 keywords 없으면 자동 추출
-      if (checkType === 'llm_contextual' && keywords.length === 0) {
+      // llm_contextual/llm_with_regex인데 keywords 없으면 자동 추출
+      if (['llm_contextual', 'llm_with_regex'].includes(checkType) && keywords.length === 0) {
         keywords = this.extractKeywordsFromText(section.title, ruleText);
       }
 
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
+      // tagCondition 처리
+      // ─────────────────────────────────────────────────────────────────────
+      let tagCondition = null;
+      if (analysis.tagCondition) {
+        if (typeof analysis.tagCondition === 'string') {
+          tagCondition = { expression: analysis.tagCondition, description: '' };
+        } else if (typeof analysis.tagCondition === 'object') {
+          tagCondition = analysis.tagCondition;
+        }
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
       // examples 정규화
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
       let examples = { good: [], bad: [] };
       if (analysis.examples && typeof analysis.examples === 'object') {
         if (Array.isArray(analysis.examples.good)) {
@@ -741,32 +884,18 @@ export class GuidelineExtractor {
         }
       }
 
+      // ─────────────────────────────────────────────────────────────────────
+      // astDescription / checkPoints 생성
+      // ─────────────────────────────────────────────────────────────────────
       const astConversionResult = this.astHintsConverter.convert(astHints, {
         title: section.title,
         category: category,
         description: analysis.enhancedDescription || ruleText
       });
 
-      // ═══════════════════════════════════════════════════════════════════
-      // AST 힌트 기반 llm_with_ast 자동 결정
-      // ═══════════════════════════════════════════════════════════════════
-      if (astHints && Object.keys(astHints).length > 0) {
-        // ast 또는 combined → llm_with_ast로 업그레이드
-        if (checkType === 'ast' || checkType === 'combined') {
-          const originalType = checkType;
-          checkType = 'llm_with_ast';
-          logger.info(`  🔄 [${ruleId}] checkType 업그레이드: ${originalType} → llm_with_ast`);
-        }
-        // regex지만 구조적 AST 힌트가 있으면 llm_with_ast
-        else if (checkType === 'regex' && this.hasStructuralAstHints(astHints)) {
-          checkType = 'llm_with_ast';
-          logger.info(`  🔄 [${ruleId}] checkType 업그레이드: regex → llm_with_ast (구조적 AST 힌트 존재)`);
-        }
-      }
-
-      // ─────────────────────────────────────────────────────────
-      // 최종 guideline 객체 생성
-      // ─────────────────────────────────────────────────────────
+      // ─────────────────────────────────────────────────────────────────────
+      // 🆕 v4.0: 최종 guideline 객체 생성
+      // ─────────────────────────────────────────────────────────────────────
       const guideline = {
         ruleId: ruleId,
         sectionNumber: section.sectionNumber,
@@ -774,11 +903,16 @@ export class GuidelineExtractor {
         level: section.level,
         category: category,
         severity: this.inferSeverity(section.title, ruleText),
-        description: analysis.enhancedDescription || ruleText,
+        description: analysis.enhancedDescription || ruleText.substring(0, 500),
+
+        // 🆕 v4.0 checkType
         checkType: checkType,
+        checkTypeReason: checkTypeReason,
+        originalCheckType: originalCheckType,
+
         message: message,
 
-        // 패턴 (Checker 호환 형식)
+        // 패턴
         antiPatterns: antiPatterns,
         goodPatterns: goodPatterns,
         patterns: antiPatterns,  // 하위 호환
@@ -786,27 +920,31 @@ export class GuidelineExtractor {
         // AST 힌트
         astHints: astHints || {},
 
-        // LLM contextual용
+        // 🆕 v4.0 LLM 지원 필드
+        astDescription: astConversionResult.astDescription,
+        checkPoints: astConversionResult.checkPoints,
+
+        // 필터링
         keywords: keywords,
+        tagCondition: tagCondition,
+        requiredTags: analysis.requiredTags || [],
+        excludeTags: analysis.excludeTags || [],
 
         // 예시 및 비즈니스 규칙
         examples: examples,
         businessRules: analysis.businessRules || [],
 
-        // ═══════════════════════════════════════════════════════════
-        // 🆕 v3.1 신규 필드 (Unified Schema)
-        // ═══════════════════════════════════════════════════════════
-
-        /** @type {string|null} 원래 checkType (마이그레이션용, 신규 추출 시 null) */
-        originalCheckType: null,
-
-        /** @type {string|null} AST 검사 기준 자연어 설명 (LLM용) */
-        astDescription: astConversionResult.astDescription,
-
-        /** @type {string[]} LLM 체크포인트 목록 */
-        checkPoints: astConversionResult.checkPoints,
+        // 활성화 상태
+        isActive: true,
 
         // 메타데이터
+        metadata: {
+          createdAt: new Date().toISOString(),
+          source: `${section.sectionNumber} ${section.title}`,
+          version: '4.0'
+        },
+
+        // 문서 컨텍스트
         contextDependencies: this.contextRules.map(c => c.ruleId),
         hasTables: content.tables.length > 0,
         hasImages: content.images.length > 0,
@@ -818,6 +956,7 @@ export class GuidelineExtractor {
       };
 
       this.guidelines.push(guideline);
+      logger.info(`  ✅ [${ruleId}] 변환 완료 (checkType: ${checkType})`);
 
     } catch (error) {
       logger.error(`  ❌ 변환 실패: ${section.sectionNumber} - ${error.message}`);
@@ -825,11 +964,46 @@ export class GuidelineExtractor {
   }
 
   /**
+   * 🆕 v4.0: checkType별 필수 조건 검증 및 자동 조정
+   */
+  validateAndAdjustCheckType(checkType, context) {
+    const { antiPatterns, goodPatterns, analysis, ruleId } = context;
+
+    switch (checkType) {
+      case 'pure_regex':
+        // pure_regex: antiPatterns 또는 goodPatterns 필수
+        if (antiPatterns.length === 0 && goodPatterns.length === 0) {
+          logger.warn(`  ⚠️ [${ruleId}] pure_regex인데 패턴이 없음 → llm_contextual로 변경`);
+          return { checkType: 'llm_contextual', reason: 'pure_regex 필수 패턴 없음' };
+        }
+        break;
+
+      case 'llm_with_regex':
+        // llm_with_regex: antiPatterns 필수
+        if (antiPatterns.length === 0) {
+          logger.warn(`  ⚠️ [${ruleId}] llm_with_regex인데 antiPatterns 없음 → llm_contextual로 변경`);
+          return { checkType: 'llm_contextual', reason: 'llm_with_regex 필수 antiPatterns 없음' };
+        }
+        break;
+
+      case 'llm_with_ast':
+        // llm_with_ast: astHints 또는 구조적 힌트 필수
+        if (!analysis.astHints || !this.hasStructuralAstHints(analysis.astHints)) {
+          logger.warn(`  ⚠️ [${ruleId}] llm_with_ast인데 AST 정보 없음 → llm_contextual로 변경`);
+          return { checkType: 'llm_contextual', reason: 'llm_with_ast 필수 AST 정보 없음' };
+        }
+        break;
+
+      case 'llm_contextual':
+        // llm_contextual: keywords 또는 tagCondition 권장 (없어도 허용)
+        break;
+    }
+
+    return { checkType, reason: null };
+  }
+
+  /**
    * 패턴 유효성 검증 및 정규화
-   * 
-   * @param {any} p - 패턴 (문자열 또는 객체)
-   * @param {string} ruleId - 규칙 ID (로깅용)
-   * @returns {object|null} 정규화된 패턴 또는 null
    */
   validatePattern(p, ruleId) {
     if (!p) return null;
@@ -848,7 +1022,6 @@ export class GuidelineExtractor {
       return null;
     }
 
-    // 유효성 검증
     if (!patternStr || typeof patternStr !== 'string') {
       return null;
     }
@@ -858,19 +1031,17 @@ export class GuidelineExtractor {
       return null;
     }
 
-    // 너무 광범위한 패턴 필터링
     const tooGeneric = ['.+', '.*', '\\w+', '\\w*', '\\s+', '\\s*',
       '[a-z]+', '[A-Z]+', '[a-zA-Z]+', '\\d+', '\\d*'];
     if (tooGeneric.includes(trimmed)) {
-      console.debug(`  ⏭️ [${ruleId}] 광범위한 패턴 스킵: "${trimmed}"`);
+      logger.debug(`  ⏭️ [${ruleId}] 광범위한 패턴 스킵: "${trimmed}"`);
       return null;
     }
 
-    // 정규식 유효성 테스트
     try {
       new RegExp(trimmed, flags);
     } catch (error) {
-      console.warn(`  ⚠️ [${ruleId}] 유효하지 않은 정규식: "${trimmed}" - ${error.message}`);
+      logger.warn(`  ⚠️ [${ruleId}] 유효하지 않은 정규식: "${trimmed}" - ${error.message}`);
       return null;
     }
 
@@ -883,16 +1054,11 @@ export class GuidelineExtractor {
 
   /**
    * 텍스트에서 키워드 자동 추출
-   * 
-   * @param {string} title - 규칙 제목
-   * @param {string} content - 규칙 내용
-   * @returns {string[]} 추출된 키워드 배열
    */
   extractKeywordsFromText(title, content) {
     const keywords = new Set();
     const text = `${title || ''} ${content || ''}`;
 
-    // Java 관련 키워드 우선 추출
     const javaKeywords = [
       'class', 'interface', 'enum', 'method', 'public', 'private', 'protected',
       'static', 'final', 'void', 'String', 'int', 'long', 'double', 'boolean',
@@ -903,23 +1069,19 @@ export class GuidelineExtractor {
     ];
 
     javaKeywords.forEach(kw => {
-      // 대소문자 구분 없이 검색하되, 원본 키워드 유지
       if (text.toLowerCase().includes(kw.toLowerCase())) {
         keywords.add(kw);
       }
     });
 
-    // 한글 명사 추출 (2글자 이상)
     const koreanNouns = text.match(/[가-힣]{2,}/g) || [];
     koreanNouns.forEach(noun => {
-      // 불용어 제외
       const stopWords = ['규칙', '사용', '경우', '있다', '없다', '한다', '된다', '것이', '해야'];
       if (!stopWords.includes(noun)) {
         keywords.add(noun);
       }
     });
 
-    // CamelCase 단어 추출
     const camelCaseWords = text.match(/[A-Z][a-z]+(?:[A-Z][a-z]+)*/g) || [];
     camelCaseWords.forEach(word => {
       if (word.length >= 4) keywords.add(word);
@@ -929,9 +1091,8 @@ export class GuidelineExtractor {
   }
 
   /**
-   * 폴백 가이드라인 생성 (LLM 분석 실패 시)
-   * 
-   * Checker 호환 형식으로 기본값 제공
+   * 🆕 v4.0: 폴백 가이드라인 생성
+   * 기본 checkType을 llm_contextual로 변경 (가장 안전)
    */
   createFallbackGuideline(section, content, ruleText) {
     const ruleId = `general.${section.sectionNumber.replace(/\./g, '_')}`;
@@ -945,33 +1106,37 @@ export class GuidelineExtractor {
       severity: 'MEDIUM',
       description: ruleText.substring(0, 500),
 
-      // Checker 호환 필드
-      checkType: 'regex',
+      // 🆕 v4.0: 폴백은 llm_contextual (가장 안전)
+      checkType: 'llm_contextual',
+      checkTypeReason: 'LLM 분석 실패로 인한 폴백',
+      originalCheckType: null,
+
       message: `${section.title} 규칙을 위반했습니다`,
 
-      // 패턴 (빈 배열)
       antiPatterns: [],
       goodPatterns: [],
       patterns: [],
 
-      // AST 힌트
       astHints: {},
-
-      // LLM contextual용
-      keywords: [],
-
-      // 예시 및 비즈니스 규칙
-      examples: { good: [], bad: [] },
-      businessRules: [],
-
-      // ═══════════════════════════════════════════════════════════
-      // 🆕 v3.1 신규 필드 (Unified Schema) - 기본값
-      // ═══════════════════════════════════════════════════════════
-      originalCheckType: null,
       astDescription: null,
       checkPoints: [],
 
-      // 메타데이터
+      keywords: this.extractKeywordsFromText(section.title, ruleText),
+      tagCondition: null,
+      requiredTags: [],
+      excludeTags: [],
+
+      examples: { good: [], bad: [] },
+      businessRules: [],
+
+      isActive: true,
+      metadata: {
+        createdAt: new Date().toISOString(),
+        source: `${section.sectionNumber} ${section.title}`,
+        version: '4.0',
+        isFallback: true
+      },
+
       contextDependencies: [],
       hasTables: content.tables.length > 0,
       hasImages: content.images.length > 0,
@@ -993,10 +1158,6 @@ export class GuidelineExtractor {
       if (item.type === 'paragraph') {
         const text = this.extractTextFromParagraph(item.element);
         if (text) textLines.push(text);
-
-        // 이미지 추출 (필요시)
-        // const images = await this.extractImagesFromParagraph(item.element);
-        // content.images.push(...images);
       }
 
       else if (item.type === 'table') {
@@ -1016,92 +1177,6 @@ export class GuidelineExtractor {
     return content;
   }
 
-  /**
-   * 가이드라인 분석 프롬프트 생성 (Checker 호환 버전)
-   * 
-   * 수정 사항:
-   * - checkType: regex, ast, combined, llm_contextual 만 허용
-   * - patterns → antiPatterns, goodPatterns 분리
-   * - astHints 필드명 변경 (nodeTypes, checkConditions)
-   * - message, keywords 필드 추가
-   * 
-   * @param {string} ruleText - 규칙 원문
-   * @param {object} section - 섹션 정보
-   * @returns {string} LLM 프롬프트
-   */
-  createGuidelineAnalysisPrompt(ruleText, section) {
-    return `다음은 Java 코딩 가이드라인 규칙입니다. 이를 분석하여 코드 검사에 사용할 수 있는 구조화된 정보로 변환해주세요.
-
-## 규칙 정보
-- 섹션: ${section.sectionNumber}
-- 제목: ${section.title}
-- Level: ${section.level}
-
-## 규칙 내용
-${ruleText}
-
-## 응답 형식
-다음 JSON 형식으로 응답해주세요:
-
-\`\`\`json
-{
-  "checkType": "regex | ast | combined | llm_contextual",
-  "enhancedDescription": "규칙에 대한 명확한 설명 (1-2문장)",
-  "message": "위반 시 개발자에게 보여줄 메시지",
-  
-  "antiPatterns": [
-    {
-      "pattern": "위반을 탐지하는 정규식",
-      "flags": "g",
-      "description": "이 패턴이 매칭되면 위반"
-    }
-  ],
-  
-  "goodPatterns": [
-    {
-      "pattern": "올바른 코드를 확인하는 정규식",
-      "flags": "g",
-      "description": "이 패턴이 있어야 정상"
-    }
-  ],
-  
-  "astHints": {
-    "nodeTypes": ["ClassDeclaration", "MethodDeclaration", "VariableDeclaration"],
-    "checkConditions": ["확인할 조건 1", "확인할 조건 2"]
-  },
-  
-  "keywords": ["키워드1", "키워드2"],
-  
-  "examples": {
-    "good": ["올바른 코드 예시"],
-    "bad": ["잘못된 코드 예시"]
-  },
-  
-  "businessRules": ["비즈니스 규칙 1", "비즈니스 규칙 2"]
-}
-\`\`\`
-
-## checkType 선택 기준
-- **regex**: 정규식 패턴 매칭으로 검사 가능한 규칙 (들여쓰기, 공백, 명명 패턴 등)
-- **ast**: 코드 구조 분석이 필요한 규칙 (클래스명, 메서드 길이, 중첩 깊이 등)
-- **combined**: 정규식으로 1차 탐지 후 AST로 검증이 필요한 복합 규칙
-- **llm_contextual**: 비즈니스 로직, 아키텍처 패턴 등 의미론적 분석이 필요한 규칙
-
-## 패턴 작성 가이드
-- antiPatterns: 이 패턴이 매칭되면 **위반**입니다 (나쁜 코드 탐지)
-- goodPatterns: 이 패턴이 있어야 **정상**입니다 (좋은 코드 확인)
-- 정규식은 Java 코드에서 동작해야 합니다
-- 너무 광범위한 패턴(.*, .+, \\w+)은 피해주세요
-- flags는 보통 "g"를 사용합니다
-
-## 주의사항
-- JSON만 출력하세요 (마크다운 코드블록 포함)
-- 정규식 특수문자는 이스케이프하세요 (\\\\t, \\\\s 등)
-- antiPatterns 또는 goodPatterns 중 최소 하나는 있어야 합니다 (regex/combined인 경우)
-- llm_contextual인 경우 keywords는 필수입니다
-- message는 한국어로 작성해주세요`;
-  }
-
   inferCategory(title, content) {
     const lowerTitle = title.toLowerCase();
     const lowerContent = content.toLowerCase();
@@ -1109,7 +1184,11 @@ ${ruleText}
     if (lowerTitle.includes('명명') || lowerTitle.includes('이름')) return 'naming_convention';
     if (lowerTitle.includes('주석') || lowerContent.includes('javadoc')) return 'documentation';
     if (lowerTitle.includes('들여쓰기') || lowerTitle.includes('공백')) return 'code_style';
-    if (lowerContent.includes('exception') || lowerContent.includes('try')) return 'error_handling';
+    if (lowerContent.includes('exception') || lowerContent.includes('try') || lowerContent.includes('catch')) return 'exception_handling';
+    if (lowerContent.includes('connection') || lowerContent.includes('resource') || lowerContent.includes('close')) return 'resource_management';
+    if (lowerContent.includes('security') || lowerContent.includes('injection') || lowerContent.includes('sql')) return 'security';
+    if (lowerContent.includes('controller') || lowerContent.includes('service') || lowerContent.includes('layer')) return 'architecture';
+    if (lowerContent.includes('performance') || lowerContent.includes('성능')) return 'performance';
 
     return 'general';
   }
@@ -1117,7 +1196,8 @@ ${ruleText}
   inferSeverity(title, content) {
     const lowerContent = content.toLowerCase();
 
-    if (lowerContent.includes('필수') || lowerContent.includes('반드시')) return 'HIGH';
+    if (lowerContent.includes('필수') || lowerContent.includes('반드시') || lowerContent.includes('금지')) return 'HIGH';
+    if (lowerContent.includes('보안') || lowerContent.includes('security') || lowerContent.includes('injection')) return 'CRITICAL';
     if (lowerContent.includes('권장') || lowerContent.includes('가급적')) return 'MEDIUM';
 
     return 'LOW';
@@ -1144,7 +1224,9 @@ ${ruleText}
         totalRules: this.guidelines.length,
         totalContextRules: this.contextRules.length,
         extractedAt: new Date().toISOString(),
-        version: '4.1',
+        version: '4.2',
+        schemaVersion: 'unified-rule.schema.json v4.0',
+        checkTypeDistribution: this.getCheckTypeDistribution(),
         documentContext: {
           contextRuleIds: this.contextRules.map(c => c.ruleId)
         }
@@ -1160,21 +1242,56 @@ ${ruleText}
     this.printStatistics();
   }
 
+  /**
+   * 🆕 v4.0: checkType 분포 계산
+   */
+  getCheckTypeDistribution() {
+    const dist = {
+      pure_regex: 0,
+      llm_with_regex: 0,
+      llm_contextual: 0,
+      llm_with_ast: 0
+    };
+
+    for (const g of this.guidelines) {
+      if (dist[g.checkType] !== undefined) {
+        dist[g.checkType]++;
+      }
+    }
+
+    return dist;
+  }
+
+  /**
+   * 🆕 v4.0: 통계 출력 (checkType 분포 포함)
+   */
   printStatistics() {
     logger.info('\n' + '═'.repeat(60));
-    logger.info('📊 추출 통계');
+    logger.info('📊 추출 통계 (v4.0)');
     logger.info('═'.repeat(60));
+
+    // 🆕 checkType 분포
+    const checkTypeDist = this.getCheckTypeDistribution();
+    logger.info('\n🏷️ checkType 분포:');
+    for (const [type, count] of Object.entries(checkTypeDist)) {
+      const percentage = this.guidelines.length > 0
+        ? ((count / this.guidelines.length) * 100).toFixed(1)
+        : 0;
+      logger.info(`  - ${type}: ${count}개 (${percentage}%)`);
+    }
 
     const categoryDist = {};
     const severityDist = {};
     let tablesCount = 0;
     let imagesCount = 0;
+    let fallbackCount = 0;
 
     for (const g of this.guidelines) {
       categoryDist[g.category] = (categoryDist[g.category] || 0) + 1;
       severityDist[g.severity] = (severityDist[g.severity] || 0) + 1;
       if (g.hasTables) tablesCount++;
       if (g.hasImages) imagesCount++;
+      if (g.metadata?.isFallback) fallbackCount++;
     }
 
     logger.info('\n📂 카테고리별 분포:');
@@ -1187,23 +1304,19 @@ ${ruleText}
       logger.info(`  - ${sev}: ${count}개`);
     }
 
-    logger.info('\n📊 컨텐츠 통계:');
+    logger.info('\n📊 기타 통계:');
     logger.info(`  - 테이블 포함 섹션: ${tablesCount}개`);
     logger.info(`  - 이미지 포함 섹션: ${imagesCount}개`);
+    logger.info(`  - 폴백 처리된 규칙: ${fallbackCount}개`);
 
     logger.info('\n' + '═'.repeat(60));
   }
 
   /**
- * AST 힌트에서 자연어 설명 생성
- * 
- * @param {Object} astHints - AST 검사 힌트
- * @param {string} checkType - 검사 타입
- * @returns {string|null} 자연어 설명 또는 null
- */
+   * AST 힌트에서 자연어 설명 생성
+   */
   generateAstDescription(astHints, checkType) {
-    // AST 기반 규칙이 아니면 null
-    if (!['ast', 'combined', 'llm_with_ast'].includes(checkType)) {
+    if (!['llm_with_ast'].includes(checkType)) {
       return null;
     }
 
@@ -1213,7 +1326,6 @@ ${ruleText}
 
     const parts = [];
 
-    // 검사 대상 노드
     if (astHints.nodeTypes && astHints.nodeTypes.length > 0) {
       const nodeDescriptions = astHints.nodeTypes.map(type => {
         return this.getNodeTypeDescription(type);
@@ -1221,20 +1333,21 @@ ${ruleText}
       parts.push(`검사 대상: ${nodeDescriptions.join(', ')}`);
     }
 
-    // checkConditions가 있으면 추가
     if (astHints.checkConditions && astHints.checkConditions.length > 0) {
       parts.push(`검사 조건: ${astHints.checkConditions.join(', ')}`);
+    }
+
+    if (astHints.maxLineCount) {
+      parts.push(`라인 수 ${astHints.maxLineCount} 초과 시 위반`);
+    }
+
+    if (astHints.checkEmpty) {
+      parts.push(`블록이 비어있으면 위반`);
     }
 
     return parts.length > 0 ? parts.join('. ') + '.' : null;
   }
 
-  /**
-   * AST 노드 타입의 한글 설명 반환
-   * 
-   * @param {string} nodeType - AST 노드 타입
-   * @returns {string} 한글 설명
-   */
   getNodeTypeDescription(nodeType) {
     const descriptions = {
       'ClassDeclaration': '클래스 선언',
@@ -1257,35 +1370,23 @@ ${ruleText}
     return descriptions[nodeType] || nodeType;
   }
 
-  /**
-   * AST 힌트에서 체크포인트 생성
-   * 
-   * @param {Object} astHints - AST 검사 힌트
-   * @param {string} checkType - 검사 타입
-   * @param {string} title - 규칙 제목
-   * @returns {string[]} 체크포인트 배열
-   */
   generateCheckPoints(astHints, checkType, title) {
-    // AST 기반 규칙이 아니면 빈 배열
-    if (!['ast', 'combined', 'llm_with_ast'].includes(checkType)) {
+    if (!['llm_with_ast', 'llm_with_regex'].includes(checkType)) {
       return [];
     }
 
     const checkPoints = [];
 
     if (!astHints || Object.keys(astHints).length === 0) {
-      // 기본 체크포인트
       checkPoints.push(`${title} 규칙을 준수하고 있는가?`);
       return checkPoints;
     }
 
-    // nodeTypes 기반
     if (astHints.nodeTypes && astHints.nodeTypes.length > 0) {
       const nodeDesc = astHints.nodeTypes.map(t => this.getNodeTypeDescription(t)).join('/');
       checkPoints.push(`${nodeDesc}이(가) 존재하는가?`);
     }
 
-    // checkConditions 기반
     if (astHints.checkConditions && astHints.checkConditions.length > 0) {
       astHints.checkConditions.forEach(condition => {
         checkPoints.push(condition.endsWith('?') ? condition : `${condition}?`);
@@ -1295,9 +1396,6 @@ ${ruleText}
     return checkPoints;
   }
 
-  /**
- * 구조적 AST 힌트 존재 여부 확인
- */
   hasStructuralAstHints(astHints) {
     if (!astHints) return false;
 
@@ -1318,3 +1416,5 @@ ${ruleText}
     return false;
   }
 }
+
+export default GuidelineExtractor;
