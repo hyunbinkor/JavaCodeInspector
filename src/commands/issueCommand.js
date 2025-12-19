@@ -64,7 +64,7 @@ export async function processBatchIssues(options) {
         await saveJsonData(pattern, `pattern_${pattern.issue_record_id}.json`, 'issuePattern');
       }
 
-      await vectorClient.upsertPattern(pattern);
+      await vectorClient.storePattern(pattern);
       logger.info(`  ✅ ${pattern.issue_record_id}`);
     } catch (error) {
       logger.error(`  ❌ ${fileName}: ${error.message}`);
