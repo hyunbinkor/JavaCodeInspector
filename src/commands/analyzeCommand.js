@@ -109,7 +109,8 @@ export async function generateTagConditions(options) {
 
   // 매퍼 초기화
   const mapper = new RuleTagMapper();
-  await mapper.initialize();
+  const llmClient = new LLMClient();
+  await mapper.initialize({ llmClient });
 
   // tagCondition 생성
   const mappings = await mapper.generateTagConditions(analysisResults, {

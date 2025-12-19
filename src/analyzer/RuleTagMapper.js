@@ -428,7 +428,7 @@ export class RuleTagMapper {
     try {
       const response = await this.llmClient.generateCompletion(prompt, {
         temperature: 0.1,
-        max_tokens: 500
+        max_tokens: 2000
       });
 
       return this.parseMappingResponse(response);
@@ -443,7 +443,7 @@ export class RuleTagMapper {
    */
   buildMappingPrompt(analysisResult) {
     return `당신은 Java 코드 품질 전문가입니다.
-아래 규칙 정보와 필요 태그 목록을 바탕으로, 이 규칙 위반을 탐지하기 위한 
+아래 규칙 정보와 사용 가능한 태그 목록을 바탕으로, 이 규칙 위반을 탐지하기 위한 
 tagCondition 표현식을 생성해주세요.
 
 ## 규칙 정보
@@ -451,9 +451,8 @@ tagCondition 표현식을 생성해주세요.
 - **제목**: ${analysisResult.title}
 - **카테고리**: ${analysisResult.category}
 
-## 필요 태그
-- **필수**: [${analysisResult.requiredTags.join(', ')}]
-- **선택**: [${analysisResult.optionalTags.join(', ')}]
+## 사용 가능 태그
+- **목록**: [${this.tagLoader.getAllTagNames().join(', ')}]
 
 ## 표현식 문법
 - AND: &&
