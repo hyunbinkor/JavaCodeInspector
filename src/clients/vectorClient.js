@@ -5,12 +5,6 @@
  * - Weaviate: 온프레미스 오픈소스 VectorDB (GraphQL)
  * - Qdrant: 고성능 Rust 기반 VectorDB (REST API)
  * 
- * v4.0 변경사항:
- * - searchGuidelinesByCheckTypes() 추가 (checkType별 그룹 검색)
- * - getGuidelineStats() 추가 (checkType 분포 통계)
- * - updateGuidelineCheckType() 추가 (checkType 변경 + 이력 추적)
- * - clearAllGuidelines() 추가 (전체 삭제)
- * 
  * 설정 기반 Provider 선택:
  * - config.vector.provider = 'weaviate' | 'qdrant'
  * - 런타임 provider 전환 불가 (재시작 필요)
@@ -28,20 +22,10 @@
  * 2. Guideline 관리 (개발가이드 규칙):
  *    - storeGuideline() - 가이드라인 저장
  *    - searchGuidelines() - 필터 기반 검색
- *    - searchGuidelinesByKeywords() - 키워드 검색
- *    - searchGuidelinesByCheckTypes() - 🆕 v4.0: checkType별 그룹 검색
- *    - getGuidelineStats() - 🆕 v4.0: checkType 분포 통계
- *    - updateGuidelineStatus() - 활성화/비활성화
- *    - updateGuidelineCheckType() - 🆕 v4.0: checkType 변경
- *    - deleteGuideline() - 가이드라인 삭제
- *    - clearAllGuidelines() - 🆕 v4.0: 전체 삭제
- *    - batchImportGuidelines() - 배치 import (PDF 추출 결과 저장)
  * 
  * 3. 시스템 관리:
  *    - initializeSchema() - 스키마/컬렉션 초기화
- *    - checkConnection() - 연결 상태 확인
- *    - getSystemStats() - 통계 조회 (패턴 수, 가이드라인 수, checkType 분포)
- *    - getProviderInfo() - Provider 정보 반환
+ *    - checkConnection() - 연결 상태 확보
  * 
  * 아키텍처 (Adapter 패턴):
  * ```
@@ -159,21 +143,6 @@ export class VectorClient {
     }
 
     /**
-     * 배치 패턴 저장
-     */
-    async batchStorePatterns(datasets, options = {}) {
-        logger.info(`📦 배치 패턴 저장 시작: ${datasets.length}개`);
-        return await this.adapter.batchStorePatterns(datasets, options);
-    }
-
-    /**
-     * 패턴 개수 조회
-     */
-    async getPatternCount() {
-        return await this.adapter.getPatternCount();
-    }
-
-    /**
      * 모든 패턴 삭제
      */
     async clearAllPatterns() {
@@ -203,163 +172,5 @@ export class VectorClient {
      */
     async searchGuidelines(filters = {}) {
         return await this.adapter.searchGuidelines(filters);
-    }
-
-    /**
-     * 키워드 기반 가이드라인 검색
-     */
-    async searchGuidelinesByKeywords(keywords, limit = 10) {
-        return await this.adapter.searchGuidelinesByKeywords(keywords, limit);
-    }
-
-    /**
-     * 🆕 v4.0: checkType별 가이드라인 그룹 검색
-     * 
-     * @param {string[]} checkTypes - 검색할 checkType 배열
-     * @param {Object} options - 추가 옵션
-     * @param {boolean} [options.isActive] - 활성화 상태 필터
-     * @param {number} [options.limit=100] - 각 checkType별 최대 결과 수
-     * @returns {Promise<Object>} checkType별 가이드라인 맵
-     * 
-     * @example
-     * const result = await searchGuidelinesByCheckTypes(
-     *   ['pure_regex', 'llm_with_regex'],
-     *   { isActive: true }
-     * );
-     * // 결과:
-     * // {
-     * //   pure_regex: [{ ruleId: 'REG-001', ... }, ...],
-     * //   llm_with_regex: [{ ruleId: 'LLR-001', ... }, ...]
-     * // }
-     */
-    async searchGuidelinesByCheckTypes(checkTypes, options = {}) {
-        return await this.adapter.searchGuidelinesByCheckTypes(checkTypes, options);
-    }
-
-    /**
-     * 🆕 v4.0: 가이드라인 통계 (checkType 분포 포함)
-     * 
-     * @returns {Promise<Object>} 통계 객체
-     * 
-     * @example
-     * const stats = await getGuidelineStats();
-     * // 결과:
-     * // {
-     * //   total: 50,
-     * //   byCheckType: { pure_regex: 10, llm_with_regex: 15, ... },
-     * //   byCategory: { 'coding-standards': 20, 'security': 15, ... },
-     * //   bySeverity: { CRITICAL: 5, HIGH: 15, ... },
-     * //   active: 45,
-     * //   inactive: 5
-     * // }
-     */
-    async getGuidelineStats() {
-        return await this.adapter.getGuidelineStats();
-    }
-
-    /**
-     * 가이드라인 활성화 상태 변경
-     */
-    async updateGuidelineStatus(ruleId, isActive) {
-        return await this.adapter.updateGuidelineStatus(ruleId, isActive);
-    }
-
-    /**
-     * 🆕 v4.0: 가이드라인 checkType 변경
-     * 
-     * 기존 checkType은 originalCheckType으로 자동 저장됨
-     * 
-     * @param {string} ruleId - 규칙 ID
-     * @param {string} checkType - 새 checkType (pure_regex, llm_with_regex, llm_contextual, llm_with_ast)
-     * @param {string} [checkTypeReason] - 변경 사유
-     * @returns {Promise<void>}
-     * 
-     * @example
-     * await updateGuidelineCheckType(
-     *   'REG-001',
-     *   'llm_with_regex',
-     *   'LLM 검증이 필요한 경우로 판단됨'
-     * );
-     */
-    async updateGuidelineCheckType(ruleId, checkType, checkTypeReason = null) {
-        return await this.adapter.updateGuidelineCheckType(ruleId, checkType, checkTypeReason);
-    }
-
-    /**
-     * 가이드라인 삭제
-     */
-    async deleteGuideline(ruleId) {
-        return await this.adapter.deleteGuideline(ruleId);
-    }
-
-    /**
-     * 🆕 v4.0: 모든 가이드라인 삭제
-     * 
-     * @returns {Promise<{deleted: number}>} 삭제된 개수
-     */
-    async clearAllGuidelines() {
-        return await this.adapter.clearAllGuidelines();
-    }
-
-    /**
-     * 가이드라인 배치 import
-     */
-    async batchImportGuidelines(guidelines) {
-        logger.info(`📥 가이드라인 배치 import 시작: ${guidelines.length}개`);
-
-        const results = {
-            success: 0,
-            failed: 0,
-            errors: []
-        };
-
-        for (const guideline of guidelines) {
-            try {
-                await this.storeGuideline(guideline);
-                results.success++;
-            } catch (error) {
-                results.failed++;
-                results.errors.push({
-                    ruleId: guideline.ruleId,
-                    error: error.message
-                });
-                logger.error(`가이드라인 저장 오류 (${guideline.ruleId}):`, error.message);
-            }
-        }
-
-        logger.info(`✅ 배치 import 완료: 성공 ${results.success}개, 실패 ${results.failed}개`);
-
-        if (results.errors.length > 0) {
-            logger.info('실패한 가이드라인들:');
-            results.errors.forEach(({ ruleId, error }) => {
-                logger.info(`  - ${ruleId}: ${error}`);
-            });
-        }
-
-        return results;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // 시스템 관리
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /**
-     * 시스템 통계 조회
-     * 
-     * v4.0: guidelinesByCheckType 포함
-     */
-    async getSystemStats() {
-        return await this.adapter.getSystemStats();
-    }
-
-    /**
-     * Provider 정보 반환
-     */
-    getProviderInfo() {
-        return {
-            provider: this.provider,
-            codePatternName: this.codePatternName,
-            guidelineName: this.guidelineName
-        };
     }
 }

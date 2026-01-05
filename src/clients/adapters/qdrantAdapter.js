@@ -9,8 +9,6 @@ import logger from '../../utils/loggerUtils.js';
  * v4.0 변경사항:
  * - checkType: pure_regex, llm_with_regex, llm_contextual, llm_with_ast
  * - checkTypeReason 필드 추가
- * - searchGuidelinesByCheckTypes() 다중 checkType 검색
- * - getGuidelineStats() checkType 분포 통계
  * 
  * @version 4.0
  */
@@ -378,85 +376,6 @@ export class QdrantAdapter {
   }
 
   /**
-   * 🆕 v4.0: checkType별 가이드라인 검색
-   * 
-   * @param {string[]} checkTypes - 검색할 checkType 배열
-   * @param {Object} options - 추가 옵션
-   * @returns {Promise<Object>} checkType별 가이드라인 맵
-   */
-  async searchGuidelinesByCheckTypes(checkTypes = this.validCheckTypes, options = {}) {
-    try {
-      const result = {};
-
-      for (const checkType of checkTypes) {
-        const guidelines = await this.searchGuidelines({
-          checkType,
-          isActive: options.isActive,
-          limit: options.limit || 100
-        });
-        result[checkType] = guidelines;
-      }
-
-      return result;
-    } catch (error) {
-      logger.error('checkType별 가이드라인 검색 오류:', error.message);
-      return {};
-    }
-  }
-
-  /**
-   * 🆕 v4.0: 가이드라인 통계 (checkType 분포 포함)
-   * 
-   * @returns {Promise<Object>} 통계 객체
-   */
-  async getGuidelineStats() {
-    try {
-      const allGuidelines = await this.searchGuidelines({ limit: 1000 });
-
-      const stats = {
-        total: allGuidelines.length,
-        byCheckType: {
-          pure_regex: 0,
-          llm_with_regex: 0,
-          llm_contextual: 0,
-          llm_with_ast: 0
-        },
-        byCategory: {},
-        bySeverity: {},
-        active: 0,
-        inactive: 0
-      };
-
-      for (const guideline of allGuidelines) {
-        // checkType 분포
-        if (stats.byCheckType[guideline.checkType] !== undefined) {
-          stats.byCheckType[guideline.checkType]++;
-        }
-
-        // 카테고리 분포
-        const category = guideline.category || 'general';
-        stats.byCategory[category] = (stats.byCategory[category] || 0) + 1;
-
-        // 심각도 분포
-        const severity = guideline.severity || 'MEDIUM';
-        stats.bySeverity[severity] = (stats.bySeverity[severity] || 0) + 1;
-
-        // 활성화 상태
-        if (guideline.isActive !== false) {
-          stats.active++;
-        } else {
-          stats.inactive++;
-        }
-      }
-
-      return stats;
-    } catch (error) {
-      logger.error('가이드라인 통계 조회 오류:', error.message);
-      return { total: 0, byCheckType: {}, byCategory: {}, bySeverity: {} };
-    }
-  }
-
-  /**
    * Payload를 가이드라인 객체로 변환
    */
   parseGuidelinePayload(payload) {
@@ -497,156 +416,6 @@ export class QdrantAdapter {
       // 메타데이터
       metadata: this.parseJSON(payload.metadata) || {}
     };
-  }
-
-  async searchGuidelinesByKeywords(keywords, limit = 10) {
-    try {
-      const should = keywords.map(keyword => ({
-        key: 'keywords',
-        match: { text: keyword }
-      }));
-
-      const scrollResult = await this.client.scroll(this.guidelineCollectionName, {
-        filter: { should },
-        limit,
-        with_payload: true,
-        with_vector: false
-      });
-
-      return scrollResult.points.map(point => this.parseGuidelinePayload(point.payload));
-    } catch (error) {
-      logger.error('키워드 기반 가이드라인 검색 오류:', error.message);
-      return [];
-    }
-  }
-
-  async updateGuidelineStatus(ruleId, isActive) {
-    try {
-      const searchResult = await this.client.scroll(this.guidelineCollectionName, {
-        filter: {
-          must: [{ key: 'ruleId', match: { value: ruleId } }]
-        },
-        limit: 1,
-        with_payload: true
-      });
-
-      if (searchResult.points.length === 0) {
-        throw new Error(`가이드라인을 찾을 수 없습니다: ${ruleId}`);
-      }
-
-      const point = searchResult.points[0];
-
-      await this.client.setPayload(this.guidelineCollectionName, {
-        payload: { isActive },
-        points: [point.id]
-      });
-
-      logger.info(`✅ 가이드라인 상태 업데이트 완료: ${ruleId} -> ${isActive}`);
-    } catch (error) {
-      logger.error(`가이드라인 상태 업데이트 오류 (${ruleId}):`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * 🆕 v4.0: 가이드라인 checkType 업데이트
-   */
-  async updateGuidelineCheckType(ruleId, checkType, checkTypeReason = null) {
-    try {
-      if (!this.validCheckTypes.includes(checkType)) {
-        throw new Error(`유효하지 않은 checkType: ${checkType}`);
-      }
-
-      const searchResult = await this.client.scroll(this.guidelineCollectionName, {
-        filter: {
-          must: [{ key: 'ruleId', match: { value: ruleId } }]
-        },
-        limit: 1,
-        with_payload: true
-      });
-
-      if (searchResult.points.length === 0) {
-        throw new Error(`가이드라인을 찾을 수 없습니다: ${ruleId}`);
-      }
-
-      const point = searchResult.points[0];
-      const payload = { checkType };
-
-      if (checkTypeReason) {
-        payload.checkTypeReason = checkTypeReason;
-      }
-
-      // 기존 checkType을 originalCheckType으로 저장
-      if (point.payload.checkType !== checkType) {
-        payload.originalCheckType = point.payload.checkType;
-      }
-
-      await this.client.setPayload(this.guidelineCollectionName, {
-        payload,
-        points: [point.id]
-      });
-
-      logger.info(`✅ 가이드라인 checkType 업데이트 완료: ${ruleId} -> ${checkType}`);
-    } catch (error) {
-      logger.error(`가이드라인 checkType 업데이트 오류 (${ruleId}):`, error.message);
-      throw error;
-    }
-  }
-
-  async deleteGuideline(ruleId) {
-    try {
-      const searchResult = await this.client.scroll(this.guidelineCollectionName, {
-        filter: {
-          must: [{ key: 'ruleId', match: { value: ruleId } }]
-        },
-        limit: 1
-      });
-
-      if (searchResult.points.length === 0) {
-        throw new Error(`가이드라인을 찾을 수 없습니다: ${ruleId}`);
-      }
-
-      const point = searchResult.points[0];
-
-      await this.client.delete(this.guidelineCollectionName, {
-        points: [point.id]
-      });
-
-      logger.info(`✅ 가이드라인 삭제 완료: ${ruleId}`);
-    } catch (error) {
-      logger.error(`가이드라인 삭제 오류 (${ruleId}):`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * 🆕 v4.0: 모든 가이드라인 삭제
-   */
-  async clearAllGuidelines() {
-    try {
-      const collectionInfo = await this.client.getCollection(this.guidelineCollectionName);
-      const pointsCount = collectionInfo.points_count || 0;
-
-      if (pointsCount === 0) {
-        logger.info('📭 삭제할 가이드라인이 없습니다.');
-        return { deleted: 0 };
-      }
-
-      logger.info(`🗑️  ${pointsCount}개 가이드라인 삭제 시작...`);
-
-      await this.client.delete(this.guidelineCollectionName, {
-        filter: {
-          must: []
-        }
-      });
-
-      logger.info(`✅ ${pointsCount}개 가이드라인 삭제 완료`);
-      return { deleted: pointsCount };
-
-    } catch (error) {
-      logger.error('❌ 가이드라인 전체 삭제 오류:', error.message);
-      throw error;
-    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -835,69 +604,6 @@ export class QdrantAdapter {
     }
   }
 
-  async batchStorePatterns(datasets, options = {}) {
-    const { clearExisting = false, skipExisting = false, batchSize = 10 } = options;
-
-    const result = { success: 0, failed: 0, skipped: 0, errors: [] };
-
-    try {
-      if (clearExisting) {
-        const clearResult = await this.clearAllPatterns();
-        logger.info(`   삭제 완료: ${clearResult.deleted}개`);
-      }
-
-      let datasetsToStore = datasets;
-      if (skipExisting && !clearExisting) {
-        const issueRecordIds = datasets.map(d => d.issue_record_id);
-        const existCheck = await this.checkPatternsExist(issueRecordIds);
-
-        if (existCheck.exists) {
-          datasetsToStore = datasets.filter(
-            d => !existCheck.existingIds.includes(d.issue_record_id)
-          );
-          result.skipped = existCheck.count;
-        }
-      }
-
-      if (datasetsToStore.length === 0) {
-        return result;
-      }
-
-      for (let i = 0; i < datasetsToStore.length; i += batchSize) {
-        const batch = datasetsToStore.slice(i, i + batchSize);
-        const points = [];
-
-        for (const dataset of batch) {
-          try {
-            const point = await this.preparePatternPoint(dataset);
-            if (point) {
-              points.push(point);
-            }
-          } catch (error) {
-            result.failed++;
-            result.errors.push({ issueRecordId: dataset.issue_record_id, error: error.message });
-          }
-        }
-
-        if (points.length > 0) {
-          try {
-            await this.client.upsert(this.codePatternCollectionName, { wait: true, points });
-            result.success += points.length;
-          } catch (error) {
-            result.failed += points.length;
-            result.errors.push({ batch: Math.floor(i / batchSize) + 1, error: error.message });
-          }
-        }
-      }
-
-      return result;
-
-    } catch (error) {
-      logger.error('❌ 배치 저장 오류:', error.message);
-      throw error;
-    }
-  }
-
   async preparePatternPoint(dataset) {
     const id = uuidv4();
 
@@ -935,16 +641,6 @@ export class QdrantAdapter {
     };
 
     return { id, vector, payload };
-  }
-
-  async getPatternCount() {
-    try {
-      const collectionInfo = await this.client.getCollection(this.codePatternCollectionName);
-      return collectionInfo.points_count || 0;
-    } catch (error) {
-      logger.error('❌ 패턴 수 조회 오류:', error.message);
-      return 0;
-    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1023,26 +719,6 @@ export class QdrantAdapter {
     } catch (error) {
       logger.error('Qdrant 연결 실패:', error.message);
       return false;
-    }
-  }
-
-  async getSystemStats() {
-    try {
-      const patternInfo = await this.client.getCollection(this.codePatternCollectionName);
-      const guidelineInfo = await this.client.getCollection(this.guidelineCollectionName);
-
-      // 🆕 v4.0: 가이드라인 상세 통계 포함
-      const guidelineStats = await this.getGuidelineStats();
-
-      return {
-        codePatterns: patternInfo.points_count || 0,
-        guidelines: guidelineInfo.points_count || 0,
-        totalObjects: (patternInfo.points_count || 0) + (guidelineInfo.points_count || 0),
-        guidelinesByCheckType: guidelineStats.byCheckType
-      };
-    } catch (error) {
-      logger.error('시스템 상태 조회 오류:', error.message);
-      return { codePatterns: 0, guidelines: 0, totalObjects: 0 };
     }
   }
 }

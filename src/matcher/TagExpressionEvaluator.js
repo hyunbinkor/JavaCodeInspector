@@ -347,34 +347,6 @@ export class TagExpressionEvaluator {
   }
 
   /**
-   * 표현식을 사람이 읽기 쉬운 형태로 변환
-   * 
-   * @param {string} expression - 표현식
-   * @returns {string} 읽기 쉬운 형태
-   */
-  humanize(expression) {
-    return expression
-      .replace(/&&/g, ' AND ')
-      .replace(/\|\|/g, ' OR ')
-      .replace(/!/g, 'NOT ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  /**
-   * 두 표현식이 동등한지 비교
-   * (정규화 후 비교)
-   * 
-   * @param {string} expr1 - 첫 번째 표현식
-   * @param {string} expr2 - 두 번째 표현식
-   * @returns {boolean} 동등 여부
-   */
-  equals(expr1, expr2) {
-    const normalize = (expr) => expr.replace(/\s+/g, '').toLowerCase();
-    return normalize(expr1) === normalize(expr2);
-  }
-
-  /**
    * 표현식의 복잡도 계산
    * (연산자 및 태그 수 기반)
    * 

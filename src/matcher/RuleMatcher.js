@@ -236,30 +236,6 @@ export class RuleMatcher {
   }
 
   /**
-   * 빠른 사전 필터링
-   * (태그 조합 평가 전에 필수 태그로 빠르게 필터)
-   * 
-   * @param {Set<string>} codeTags - 코드 태그
-   * @param {Object[]} rules - 규칙 배열
-   * @returns {Object[]} 필터링된 규칙 배열
-   */
-  prefilterRules(codeTags, rules) {
-    return rules.filter(rule => {
-      const tagCondition = rule.tagCondition?.expression || rule.tagCondition;
-      
-      if (!tagCondition) return true;  // tagCondition 없으면 통과
-
-      // 필수 태그 추출 (AND로만 연결된 태그)
-      const requiredTags = this.expressionEvaluator.getRequiredTags(tagCondition);
-      
-      if (requiredTags.length === 0) return true;  // 필수 태그 없으면 통과
-
-      // 필수 태그 중 하나라도 없으면 제외
-      return requiredTags.every(tag => codeTags.has(tag));
-    });
-  }
-
-  /**
    * 카테고리별 위반 그룹화
    * 
    * @param {MatchResult[]} violations - 위반 목록
@@ -333,76 +309,6 @@ export class RuleMatcher {
         priority: v.priority
       }))
     };
-  }
-
-  /**
-   * 규칙의 tagCondition 유효성 검사
-   * 
-   * @param {Object[]} rules - 규칙 배열
-   * @returns {Object} { valid: Object[], invalid: Object[] }
-   */
-  validateRuleExpressions(rules) {
-    const valid = [];
-    const invalid = [];
-
-    for (const rule of rules) {
-      const tagCondition = rule.tagCondition?.expression || rule.tagCondition;
-      
-      if (!tagCondition) {
-        valid.push({ rule, hasCondition: false });
-        continue;
-      }
-
-      const validation = this.expressionEvaluator.validate(tagCondition);
-      
-      if (validation.valid) {
-        valid.push({ rule, hasCondition: true });
-      } else {
-        invalid.push({
-          rule,
-          expression: tagCondition,
-          error: validation.error
-        });
-      }
-    }
-
-    return { valid, invalid };
-  }
-
-  /**
-   * 특정 태그가 영향을 미치는 규칙 찾기
-   * 
-   * @param {string} tagName - 태그명
-   * @param {Object[]} rules - 규칙 배열
-   * @returns {Object[]} 해당 태그에 의존하는 규칙 배열
-   */
-  findRulesByTag(tagName, rules) {
-    return rules.filter(rule => {
-      const tagCondition = rule.tagCondition?.expression || rule.tagCondition;
-      if (!tagCondition) return false;
-      return this.expressionEvaluator.dependsOn(tagCondition, tagName);
-    });
-  }
-
-  /**
-   * 위반 결과를 LLM 검증용 형식으로 변환
-   * 
-   * @param {MatchResult[]} violations - 위반 목록
-   * @returns {Object[]} LLM 검증용 형식
-   */
-  formatForLLMVerification(violations) {
-    return violations.map(v => ({
-      ruleId: v.ruleId,
-      title: v.title,
-      description: v.rule?.description || v.description,
-      severity: v.severity,
-      matchedCondition: v.expression,
-      matchedTags: v.matchedTags,
-      needsVerification: v.matchedTags.some(tag => 
-        // LLM 태그가 포함된 경우 검증 필요
-        tag.includes('CALLS_') || tag.includes('NAMING_') || tag.includes('LAYER_')
-      )
-    }));
   }
 }
 
